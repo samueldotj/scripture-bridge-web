@@ -107,15 +107,32 @@ a member of the projects they administer, and RLS would correctly show them noth
 
 ## Verification
 
-`npm run build` and `npx tsc --noEmit` pass. The client bundle has been checked for leaked
-secrets and server modules.
+| Command | Checks |
+|---|---|
+| `npm run check` | Typecheck, build, client bundle, schema guard — everything that needs no database |
+| `npm run check-stack` | Preflight against a live stack: version, schemas, functions, seeded data, admin API, auth settings |
+| `npm run verify-e2e` | The full M4 sequence — provision, assign, reopen, reset — asserting audit and change-log outcomes |
 
-**No integration test has been run against a live stack** — the machine this was built on has
-neither Docker nor the Supabase CLI, so `supabase start` was not possible. `npm run check-stack`
-exists to close that gap on a machine that does: run it first, and it will name anything missing
-before an operator finds it.
+Two of these are worth explaining.
 
-One thing it will report as a warning: `service_role` has no `USAGE` on schema `api`. That is
+**`check-schema`** parses the migrations in `scripture-bridge-db` and resolves every table,
+column, and function signature this console's SQL references. The console composes SQL in
+template literals, which TypeScript cannot check, so without it a renamed column becomes a
+runtime error found by a coordinator. Point it at a checkout with `SB_DB_REPO=...`; CI checks
+that repository out so the guard always has something to compare against.
+
+**`verify-e2e`** writes real data and does not clean up, so it refuses to run outside CI without
+`-- --i-know-this-writes`. Run it against a disposable stack.
+
+All of it runs on push — see [.github/workflows/web.yml](.github/workflows/web.yml), whose `e2e`
+job starts a full Supabase stack, since Docker and the Supabase CLI live in CI rather than on a
+developer's machine.
+
+**The e2e job has never executed.** It is written and wired in; its first run will be the first
+push, and the workflow may well need a pass or two before the sequence it drives is the thing
+being tested. Until then, nothing here has touched a real database.
+
+One thing `check-stack` will report as a warning: `service_role` has no `USAGE` on schema `api`. That is
 expected on a stock stack and does not affect this console, which uses a direct connection. It
 does mean the console RPCs are unreachable over PostgREST as `service_role` today —
 see [docs/architecture.md](docs/architecture.md), which also carries the migration that would fix
@@ -127,8 +144,9 @@ it if the HTTP path is ever wanted.
 src/lib/         server-only: config, connection, GoTrue admin, error model, queries, session
 src/app/actions/ Server Actions — every privileged write, one per api.* function
 src/app/         routes; (console) is the authenticated group
-scripts/         check-stack.mjs preflight
-docs/            architecture and its trade-offs
+scripts/         preflight, bundle check, schema guard, M4 verification, CI wrapper
+docs/            requirements, roadmap, architecture
+.github/         CI: checks on every push, M4 verification against a live stack
 ```
 
 ## License

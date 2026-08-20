@@ -4,7 +4,7 @@
 **Scope:** The administrative console for the Scripture Bridge backend
 **Companion documents:** `scripture-bridge-db/docs/requirements.md` (**DB**) and
 `scripture-bridge-android-app/docs/requirements.md` (**APP**)
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-20
 
 ---
 
@@ -510,22 +510,34 @@ patience and by the cost of the underlying operation, not by DB §15's device-fa
 - **R-TEST-WEB-1.** The type checker and a production build pass. Both run before any change is
   considered done.
 - **R-TEST-WEB-2.** The client bundle is checked for the service key, the database URL, the
-  session secret, and any server-only module. **Currently performed by hand after a build.** It
-  is an assertion about R-SEC-WEB-2 — the requirement most expensive to get wrong — and belongs
-  in CI rather than in a habit (§15 #9).
-- **R-TEST-WEB-3.** Every column and every RPC signature the console references is verified
-  against the migrations in `scripture-bridge-db`. The console composes SQL that the compiler
-  cannot check, so a renamed column is otherwise found at runtime by an operator. **Also
-  performed by hand today**, and it is the check most likely to rot: it must be redone whenever
-  that repository adds a migration, and nothing currently notices when it is not.
-- **R-TEST-WEB-4. An end-to-end run against a live stack is required before the pilot** and has
-  **not yet been performed** — the machine the first cut was built on had neither Docker nor the
-  Supabase CLI. The preflight of §11.2 exists to make the first such run diagnostic rather than
-  mysterious. Until it happens, no claim in §6 is verified against a real database.
-- **R-TEST-WEB-5.** The end-to-end run must cover, at minimum: create an account; create a
-  project; add the account as a member; assign a chapter; confirm the assignment produced a
-  change-log entry; reset the password; confirm `must_change_password` is re-armed; and confirm
-  every one of those actions appears in the audit log with the operator's label.
+  session secret, and any server-only module. Automated as `check-bundle` and run in CI. It
+  asserts R-SEC-WEB-2 — the requirement most expensive to get wrong, because its failure
+  produces no error and nobody notices by using the console.
+- **R-TEST-WEB-3.** Every table, column, and function signature the console references is
+  verified against the migrations in `scripture-bridge-db`. The console composes SQL the
+  compiler cannot check, so a renamed column is otherwise found at runtime by an operator.
+  Automated as `check-schema`; CI checks out that repository so the guard has something to
+  compare against, since a guard with no migrations to read would pass vacuously.
+- **R-TEST-WEB-6.** Both checks are negative-tested: each has been shown to fail on a
+  deliberately introduced defect. A check that has never failed is a check nobody has confirmed
+  is wired up.
+- **R-TEST-WEB-4. An end-to-end run against a live stack is required before the pilot.** It is
+  automated as `verify-e2e` and runs in CI against a full Supabase stack, which is where the
+  Docker and CLI dependencies live — they are not required on a developer's machine. The
+  preflight of §11.2 runs first in that job, so a stack missing the console API is reported as
+  that rather than as whichever operation happens to fail.
+- **R-TEST-WEB-5.** The end-to-end run covers, at minimum: create an account; confirm the
+  profile trigger fired and `must_change_password` defaults true; create a project and confirm
+  it materialised in full rather than as an empty shell; refuse an unseeded versification
+  scheme; add a member and change their role; assign a chapter; **confirm the assignment wrote a
+  change-log entry**; refuse assignment of a non-member; reopen an approved chapter and confirm
+  the reason reached the audit log; refuse reopening a chapter that is not approved; reset a
+  password, confirm the forced change is re-armed *and* re-fingerprinted, and confirm the
+  account can actually sign in with the new password; and confirm every action appears in
+  `app.audit_log` with the operator's label and none without one.
+- **R-TEST-WEB-7.** The verification writes real data and does not clean up, so it refuses to
+  run outside CI without an explicit flag. Project rows cascade nowhere (DB R-DATA-4), and
+  deleting one is a runbook rather than a test fixture.
 
 ---
 
@@ -591,11 +603,12 @@ correctly by a tired person.
 | 2 | **Deployment target is unchosen**, and it decides three things: pool size, whether project creation can complete in one request, and whether the rate limiter is honest (§11.3). | Decision |
 | 3 | If the console is ever run behind more than one replica, the sign-in limiter needs shared storage (R-SEC-WEB-11). | Decision, follows #2 |
 | 4 | Does a read-only operator role have a real user? A partner organisation wanting progress visibility without provisioning rights is the plausible case, and nobody has asked for it yet. | Decision |
-| 5 | **The end-to-end run of R-TEST-WEB-5 has not happened.** Everything in §6 is verified statically against the migrations and by a passing build, and nothing more. | Verification |
+| 5 | **The end-to-end run of R-TEST-WEB-5 has never executed.** It is written and wired into CI, but the machine it was written on cannot run a Supabase stack, so its first run will be its first push. Expect the workflow itself to need a pass or two before the sequence it drives is the thing being tested. | Verification |
 | 6 | Session lifetime is asserted at 8 hours from the shape of a coordinator's day, not measured. Revisit if operators report being signed out mid-task. | Verification |
 | 7 | Who holds the console's copy of the service key, and how is its rotation coordinated with DB R-OPS-4? Roadmap §8's ownership question, narrowed to the one operational consequence. | Dependency |
 | 8 | Project creation for a whole Bible has never been timed against a hosted project, only reasoned about from the row count. It is the console's only volume-bound operation and the one that constrains deployment. | Verification |
-| 9 | There is no CI. R-TEST-WEB-2 and R-TEST-WEB-3 are manual, and the second must be repeated on every migration added to `scripture-bridge-db` — a cross-repository dependency with nothing watching it. | Dependency |
+| 9 | ~~There is no CI.~~ **Closed:** typecheck, schema guard, build, bundle check, and the M4 verification all run on push. Two consequences remain open — the schema guard only runs when *this* repository is pushed, so a migration landing in `scripture-bridge-db` breaks nothing until someone touches this one (#10), and the workflow has never executed (#5). | Closed |
+| 10 | The cross-repository guard is one-directional. `scripture-bridge-db` does not know this console exists, so a migration that renames a column goes green there and red here only on the next push. A scheduled run, or a notification from that repository, would close the window — neither is built. | Decision |
 
 ---
 

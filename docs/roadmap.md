@@ -5,7 +5,7 @@
 `scripture-bridge-android-app/docs/roadmap.md` — same milestone numbering, third track
 **Requirements:** [requirements.md](requirements.md) (**WEB**), and the database and app
 requirements documents (**DB**, **APP**)
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-20
 
 ---
 
@@ -61,9 +61,9 @@ first cut          M4 verification        deployment          M5 field         p
 The three things that can stall this path, in order of likelihood:
 
 1. **Nothing here has ever touched a real database.** The first cut was built on a machine with
-   no Docker, no Supabase CLI, and no psql. Every claim about it rests on a passing type check, a
-   passing build, and a by-hand comparison of its SQL against the migrations. That is enough to
-   say the code is plausible and not enough to say it works.
+   no Docker, no Supabase CLI, and no psql. The verification that would settle it is now written
+   and wired into CI, where those tools do exist — but it has not run, so this remains the
+   largest single unknown in the project. Everything below it in this path assumes it passes.
 2. **The deployment target is unchosen** (§4.1 #2), and it decides three implementation details
    that are cheap now and awkward later: connection pool size, whether whole-Bible project
    creation survives a host's request ceiling, and whether the sign-in rate limiter is honest.
@@ -112,27 +112,40 @@ to work rather than believed to work.
 - Preflight command covering configuration, schema, functions, seeded reference data, admin API,
   and the self-registration setting (WEB §11.2).
 
-**Remaining, and it is the whole of the milestone**
+**Built since, and now the milestone's machinery rather than its remaining work**
 
-- **The end-to-end run of WEB R-TEST-WEB-5** against a live stack: create an account, create a
-  project, add the member, assign a chapter, reset the password, and confirm each step landed in
-  the audit log with the operator's label.
-- Confirm the assignment produced a **change-log entry**. This is the specific thing migration
-  0015 was written to fix, and the console is the first caller that will exercise it outside
-  pgTAP.
-- CI: type check, build, and the client-bundle secret check, which is currently a habit rather
-  than a gate (WEB §15 #9).
-- A guard for the cross-repository schema dependency (WEB R-TEST-WEB-3). The console composes
-  SQL the compiler cannot check, and today nothing notices when a migration renames a column.
+- **CI** — typecheck, schema guard, build, bundle check, and the verification job
+  (`.github/workflows/web.yml`).
+- **The client-bundle check** (WEB R-TEST-WEB-2), previously a habit, now a gate. Negative-tested
+  against each shape it looks for.
+- **The cross-repository schema guard** (WEB R-TEST-WEB-3) — parses the migrations, resolves
+  every table, column, and function the console's SQL references, and fails on divergence.
+  Negative-tested against a renamed column, a renamed table, and a changed arity.
+- **The M4 verification sequence** (WEB R-TEST-WEB-5), written to run against a full stack
+  started in CI. Docker and the Supabase CLI live there rather than on a developer's machine,
+  which is what made the run possible at all.
+
+**Remaining, and it is now one thing**
+
+- **The verification has never executed.** It is written and wired in; its first run will be the
+  first push. Two outcomes are possible and both are progress: the workflow needs a pass or two
+  to become correct, or the sequence runs and tells us something about migration 0015's
+  functions that nothing has tested before.
+- Whatever that run reports. The change-log assertion is the one to watch — it is the specific
+  defect migration 0015 was written to fix, and the console is its first caller outside pgTAP.
 
 **Exit criteria**
 
-- The R-TEST-WEB-5 sequence has been performed by a person against a running stack, start to
-  finish, and every step appears in `app.audit_log` with the acting operator.
-- A chapter assigned through the console reaches a signed-in app client through delta sync.
-- `npm run check-stack` passes against that stack.
-- CI runs on every commit and fails on a type error, a build error, or a secret in the client
-  bundle.
+- **The verification job is green**, which means the R-TEST-WEB-5 sequence ran end to end
+  against a real stack and every step appears in `app.audit_log` with the acting operator.
+- A chapter assigned through the console reaches a signed-in app client through delta sync. The
+  verification asserts the change-log entry exists; **confirming the device actually receives it
+  is still a human step**, and it is the one thing in this milestone that automation does not
+  reach.
+- `npm run check-stack` passes against that stack — it runs first in the job, so this is implied
+  by the above, but it is the criterion an operator can check by hand before a deployment.
+- CI fails on a type error, a build error, a secret in the client bundle, or a schema
+  divergence.
 
 ---
 
@@ -237,12 +250,12 @@ In roughly the order the requirements justify, not a commitment:
 
 | Risk | Impact | Where it bites | Mitigation |
 |---|---|---|---|
-| The first cut has never run against a database | Any of its operations may fail at first use, in front of a coordinator | M4 | R-TEST-WEB-5 run, gated as M4's exit criterion; the preflight makes the first run diagnostic |
-| Service key leaks from the console | Full compromise of every project's data | Any | `server-only` guards, no `NEXT_PUBLIC_*`, bundle check — but the check is manual until CI exists (§4.2) |
+| The first cut has never run against a database | Any of its operations may fail at first use, in front of a coordinator | M4 | The verification job, gated as M4's exit criterion; the preflight runs first so the first failure is diagnostic |
+| Service key leaks from the console | Full compromise of every project's data | Any | `server-only` guards, no `NEXT_PUBLIC_*`, and a bundle check that fails the build — negative-tested against each shape it looks for |
 | Key rotation misses the console | Account creation and password reset silently stop working | Any, after a rotation | §4.1 #1; the console named in DB R-OPS-4's runbook |
 | Deployment target chosen late | Rework of pool size and project-creation flow after the fact | M4/M5 boundary | §4.1 #2, forced to a decision before deployment |
 | Whole-Bible project creation exceeds a request ceiling | A project half-materialised, or an operator who cannot tell | M5, first large project | Timed against a hosted project before the pilot (WEB §15 #8); serverless constraints in R-OPS-WEB-8 |
-| Schema drift in `scripture-bridge-db` | A renamed column becomes a runtime error found by an operator | Any migration | R-TEST-WEB-3, currently manual — the guard in §4.2 is the fix |
+| Schema drift in `scripture-bridge-db` | A renamed column becomes a runtime error found by an operator | Any migration | The schema guard, in CI. **One-directional**: that repository does not know this one exists, so drift stays green there and surfaces here only on the next push (WEB §15 #10) |
 | Coordinator cannot use it without a developer | The pilot gate is not met, and it is not met *late* | Pilot | §5's literal test, run early enough that wording defects can still be fixed |
 | Console operators are also translators on the same GoTrue instance | An operator's own `must_change_password` state is irrelevant to console access and could confuse a support conversation | Pilot | Documented in WEB §5.2: console access does not use the operator's JWT at all |
 
@@ -258,8 +271,9 @@ during a pilot.
 
 The three things that need a name against them:
 
-1. Who runs the M4 verification (§4.2), which is the only thing standing between "written" and
-   "known to work".
+1. Who watches the M4 verification (§4.2) and acts on what it reports. CI now runs it, which
+   answers "who types the commands" and not "who reads a red build at 9am and decides whether
+   the console or the database is wrong". Those are different people's judgement.
 2. Who holds the service key and rotates it (§4.1 #1).
 3. Who the coordinator is in §5's pilot-gate test, and when they are available. They are not a
    developer, so their time has to be asked for rather than assumed.
