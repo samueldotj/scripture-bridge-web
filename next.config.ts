@@ -22,8 +22,16 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Next's inline bootstrap and hydration payload require these.
-              "script-src 'self' 'unsafe-inline'",
+              // Next's inline bootstrap and hydration payload require
+              // 'unsafe-inline'. Dev additionally needs 'unsafe-eval': the HMR
+              // runtime evaluates module code as strings, and without it React
+              // never hydrates — the forms then fall back to native posts, and
+              // a Server Action reached that way fails its origin check with a
+              // 500 that looks like a bug in the action. Production builds do
+              // no eval, so the relaxation stops at the dev server.
+              process.env.NODE_ENV === 'development'
+                ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+                : "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data:",
               "connect-src 'self'",

@@ -5,7 +5,7 @@ import { isOperator } from '@/lib/env';
 import { verifyOperatorPassword } from '@/lib/gotrue';
 import { createSession, destroySession } from '@/lib/session';
 import { checkRateLimit, clearRateLimit } from '@/lib/rate-limit';
-import type { ActionResult } from '@/lib/errors';
+import { failure, type ActionResult } from '@/lib/errors';
 
 export async function signIn(
   _prev: ActionResult | null,
@@ -31,7 +31,19 @@ export async function signIn(
   // correct would confirm both an account and its credentials to someone who
   // has no business here.
   const allowed = isOperator(email);
-  const result = await verifyOperatorPassword(email, password);
+
+  let result: Awaited<ReturnType<typeof verifyOperatorPassword>>;
+  try {
+    result = await verifyOperatorPassword(email, password);
+  } catch (err) {
+    // An unreachable auth service, or configuration that cannot be read, must
+    // arrive as a message on the sign-in form. Without this the action throws
+    // and the operator gets a blank 500 — the least diagnosable moment in the
+    // whole console, because it is the one screen they can reach before
+    // anything is known to work.
+    console.error('[console] sign-in failed before the password was checked:', err);
+    return failure(err);
+  }
 
   if (!allowed || !result.ok) {
     if (result.ok === false && result.rateLimited) {
