@@ -93,6 +93,7 @@ if (!SERVICE_KEY) {
 const RUN = randomBytes(3).toString('hex');
 const OPERATOR = `verify-${RUN}@console`;
 const EMAIL = `translator-${RUN}@verify.test`;
+const OUTSIDER_EMAIL = `outsider-${RUN}@verify.test`;
 const INITIAL_PASSWORD = randomBytes(12).toString('base64url');
 const RESET_PASSWORD = randomBytes(12).toString('base64url');
 const PROJECT_NAME = `Verification ${RUN}`;
@@ -156,27 +157,51 @@ try {
 }
 
 let profileId = null;
+let outsiderId = null;
 let projectId = null;
 let chapterId = null;
+
+/**
+ * Creates an account and returns its profile id.
+ *
+ * The profile arrives by trigger (DB R-AUTH-DB-6); an auth user without one can
+ * sign in but is invisible to every query in the schema.
+ */
+async function provision(email, displayName, password) {
+  const created = await admin('/auth/v1/admin/users', 'POST', {
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { display_name: displayName },
+  });
+  if (!created.ok || !created.json?.id) return { authUserId: null, profileId: null, created };
+  const pid = await scalar('select id from app.profile where auth_user_id = $1', [
+    created.json.id,
+  ]);
+  return { authUserId: created.json.id, profileId: pid, created };
+}
 
 try {
   // -------------------------------------------------------------------------
   section('Account provisioning (WEB §6.5)');
   // -------------------------------------------------------------------------
 
-  const created = await admin('/auth/v1/admin/users', 'POST', {
-    email: EMAIL,
-    password: INITIAL_PASSWORD,
-    email_confirm: true,
-    user_metadata: { display_name: `Verify ${RUN}` },
-  });
-  const authUserId = created.json?.id ?? null;
-  check(created.ok && authUserId, 'admin API created a pre-confirmed account', created.text);
+  const primary = await provision(EMAIL, `Verify ${RUN}`, INITIAL_PASSWORD);
+  const authUserId = primary.authUserId;
+  check(authUserId, 'admin API created a pre-confirmed account', primary.created.text);
+
+  // A second account that is never added to any project. It exists so the
+  // negative assertion in the assignment section has a genuine non-member to
+  // use. Previously that check looked for "any other profile" and skipped
+  // itself when a freshly reset database contained only one — a test that
+  // silently does not run, which is the failure mode this suite exists to
+  // catch elsewhere.
+  const outsider = await provision(OUTSIDER_EMAIL, `Outsider ${RUN}`, INITIAL_PASSWORD);
+  outsiderId = outsider.profileId;
+  check(outsiderId, 'a non-member account exists for the negative assignment check');
 
   if (authUserId) {
-    // DB R-AUTH-DB-6: the profile arrives by trigger. An account without one can
-    // sign in but is invisible to every query in the schema.
-    profileId = await scalar('select id from app.profile where auth_user_id = $1', [authUserId]);
+    profileId = primary.profileId;
     check(profileId, 'the profile trigger produced a profile row');
 
     const mustChange = await scalar(
@@ -304,25 +329,36 @@ try {
       'assignment is recorded against the operator',
     );
 
-    // Assigning a non-member produces a chapter its assignee cannot read
-    // (WEB R-FN-WEB-10).
-    const stranger = await scalar(
-      'select id from app.profile where id <> $1 limit 1', [profileId],
-    );
-    if (stranger) {
-      let rejected = false;
-      try {
-        await db.query('select api.assign_chapter($1, $2, null, $3)', [
-          chapterId, stranger, OPERATOR,
-        ]);
-      } catch (err) {
-        rejected = err.code === 'PT400';
-      }
-      check(rejected, 'assigning a non-member is refused');
+    // Assigning a non-member produces a chapter its assignee cannot read: the
+    // app would show them nothing and the refusal would look like a bug rather
+    // than a mis-assignment (WEB R-FN-WEB-10).
+    //
+    // Asserted unconditionally. If the outsider account is missing, that is a
+    // failure of this script rather than a reason to skip the check.
+    let rejected = false;
+    let rejectionCode = null;
+    try {
       await db.query('select api.assign_chapter($1, $2, null, $3)', [
-        chapterId, profileId, OPERATOR,
+        chapterId, outsiderId, OPERATOR,
       ]);
+    } catch (err) {
+      rejectionCode = `${err.code} ${err.message}`;
+      rejected = err.code === 'PT400' && err.message === 'invalid_argument';
     }
+    check(
+      rejected,
+      'assigning a non-member is refused with invalid_argument',
+      rejectionCode ?? 'the assignment was ACCEPTED',
+    );
+
+    // The refused call must not have changed anything.
+    const stillAssigned = await scalar(
+      'select assigned_translator_id from app.chapter where id = $1', [chapterId],
+    );
+    check(
+      stillAssigned === profileId,
+      'and the existing assignment is untouched by the refusal',
+    );
 
     // Clearing must be possible, and must not be an accident of the form
     // (WEB R-FN-WEB-9).

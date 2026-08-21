@@ -3,8 +3,8 @@
 Operations console for Scripture Bridge — the administrative surface for the Supabase backend
 in [scripture-bridge-db](https://github.com/samueldotj/scripture-bridge-db).
 
-**Status:** first cut. Builds and typechecks; not yet run against a live stack (see
-[Verification](#verification)).
+**Status:** the administrative surface is built and verified against a live Supabase stack in
+CI. One milestone criterion remains and is not automatable — see [Verification](#verification).
 
 ## Documentation
 
@@ -128,9 +128,14 @@ All of it runs on push — see [.github/workflows/web.yml](.github/workflows/web
 job starts a full Supabase stack, since Docker and the Supabase CLI live in CI rather than on a
 developer's machine.
 
-**The e2e job has never executed.** It is written and wired in; its first run will be the first
-push, and the workflow may well need a pass or two before the sequence it drives is the thing
-being tested. Until then, nothing here has touched a real database.
+The e2e job is green: 40 assertions covering provisioning, project materialisation, membership,
+assignment, reopen, password reset, the audit trail, and the console's own HTTP surface. The
+load-bearing one is that assignment writes a change-log entry — the defect DB migration 0015 was
+written to fix, confirmed here by its first caller outside pgTAP.
+
+**One thing it cannot prove.** That a chapter assigned through the console actually arrives on a
+device. The verification asserts the change-log entry exists; delta sync delivering it to a
+signed-in app client needs a device, a translator, and a person watching.
 
 One thing `check-stack` will report as a warning: `service_role` has no `USAGE` on schema `api`. That is
 expected on a stock stack and does not affect this console, which uses a direct connection. It

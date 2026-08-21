@@ -19,11 +19,13 @@ is still open, and invented dates get quoted. Each milestone has **exit criteria
 testable conditions — and a **relative size**.
 
 **This track is different from the other two in one important way.** The database and app
-roadmaps describe work that will be done. This repository already contains a complete first cut
-of the administrative surface, written in one pass, and **none of it has been run against a real
-database**. So the sequencing question here is not "what do we build next" but "what do we have
-to prove before any of it can be believed" — which is why M4's exit criteria, not its work list,
-are the substance of this document.
+roadmaps describe work that will be done. This repository arrived as a complete first cut of the
+administrative surface, written in one pass and unverified. So the sequencing question here is
+not "what do we build next" but "what do we have to prove before any of it can be believed" —
+which is why M4's exit criteria, not its work list, are the substance of this document.
+
+As of 2026-08-20 that sequence runs in CI and passes against a live stack. What remains of M4 is
+the single criterion automation cannot reach (§4.2).
 
 ---
 
@@ -49,21 +51,21 @@ can absorb slippage; the console's only successor is the pilot gate.
 ## 3. Critical Path
 
 ```text
-first cut          M4 verification        deployment          M5 field         pilot
-(delivered,   ──►  against a live    ──►  target + CI    ──►  readiness   ──►  gate
- unverified)       stack                                      (fonts, export)
-                        │                       │                   │
-                        │                       └── blocked on §4.1 #2
-                        │                                           │
-                        └── blocks everything below     ────────────┴── blocked on DB §17 #4
+first cut       M4 verification      deployment        M5 field         pilot
+(delivered) ──► in CI, GREEN    ──►  target + CI  ──►  readiness   ──►  gate
+                                                       (fonts, export)
+                     │                    │                 │
+                     └── delta sync       └── blocked       └── blocked on
+                         to a device          on §4.1 #2        DB §17 #4
+                         still human
 ```
 
 The three things that can stall this path, in order of likelihood:
 
-1. **Nothing here has ever touched a real database.** The first cut was built on a machine with
-   no Docker, no Supabase CLI, and no psql. The verification that would settle it is now written
-   and wired into CI, where those tools do exist — but it has not run, so this remains the
-   largest single unknown in the project. Everything below it in this path assumes it passes.
+1. ~~Nothing here has ever touched a real database.~~ **Closed 2026-08-20.** The verification
+   runs in CI against a full stack and passes: 40 assertions covering provisioning, project
+   materialisation, membership, assignment, reopen, password reset, and the audit trail. What is
+   left of it is the delta-sync confirmation, which needs a device and a person (§4.2).
 2. **The deployment target is unchosen** (§4.1 #2), and it decides three implementation details
    that are cheap now and awkward later: connection pool size, whether whole-Bible project
    creation survives a host's request ceiling, and whether the sign-in rate limiter is honest.
@@ -97,7 +99,7 @@ the console's.
 
 ### 4.2 M4 — The administrative surface
 
-**Size:** M remaining (the code is written; the verification is not)
+**Size:** S remaining (the surface is built and the verification passes; one criterion is left)
 **Goal:** a coordinator can perform every provisioning and workflow operation, and it is known
 to work rather than believed to work.
 
@@ -121,30 +123,44 @@ to work rather than believed to work.
 - **The cross-repository schema guard** (WEB R-TEST-WEB-3) — parses the migrations, resolves
   every table, column, and function the console's SQL references, and fails on divergence.
   Negative-tested against a renamed column, a renamed table, and a changed arity.
-- **The M4 verification sequence** (WEB R-TEST-WEB-5), written to run against a full stack
-  started in CI. Docker and the Supabase CLI live there rather than on a developer's machine,
-  which is what made the run possible at all.
+- **The M4 verification sequence** (WEB R-TEST-WEB-5), running against a full stack started in
+  CI. Docker and the Supabase CLI live there rather than on a developer's machine, which is what
+  made the run possible at all.
 
-**Remaining, and it is now one thing**
+**What the first green run established (2026-08-20)**
 
-- **The verification has never executed.** It is written and wired in; its first run will be the
-  first push. Two outcomes are possible and both are progress: the workflow needs a pass or two
-  to become correct, or the sequence runs and tells us something about migration 0015's
-  functions that nothing has tested before.
-- Whatever that run reports. The change-log assertion is the one to watch — it is the specific
-  defect migration 0015 was written to fix, and the console is its first caller outside pgTAP.
+- Every operation in §6 works against a real database. The profile trigger fires, Matthew
+  materialises to 1,071 verses rather than an empty shell, an unseeded scheme is refused with a
+  typed error, a role change reports its predecessor, reopen discards the approval and preserves
+  the reason, and a reset password actually signs in.
+- **Assignment writes a change-log entry.** This is the defect migration 0015 was written to fix,
+  and the console was its first caller outside pgTAP. It is now confirmed.
+- Every privileged action reached `app.audit_log` carrying the operator label, and none reached
+  it without one.
+- The console boots, serves its sign-in page, redirects an unauthenticated request for
+  `/projects`, and sends its security headers.
+
+Three defects surfaced on the way, none of which a passing build could have caught: a dev CSP
+that blocked React hydration, a sign-in path that turned an unreachable auth service into a blank
+500, and a CI job that set two environment variables per step and missed one. All fixed.
+
+**Remaining, and it is one thing**
+
+- **A chapter assigned through the console must be shown to reach a device.** The verification
+  proves the change-log entry exists; it does not prove the app receives it. That needs a device,
+  a signed-in translator, and a person watching — and it is the only part of this milestone
+  automation does not reach.
 
 **Exit criteria**
 
-- **The verification job is green**, which means the R-TEST-WEB-5 sequence ran end to end
-  against a real stack and every step appears in `app.audit_log` with the acting operator.
-- A chapter assigned through the console reaches a signed-in app client through delta sync. The
-  verification asserts the change-log entry exists; **confirming the device actually receives it
-  is still a human step**, and it is the one thing in this milestone that automation does not
-  reach.
-- `npm run check-stack` passes against that stack — it runs first in the job, so this is implied
-  by the above, but it is the criterion an operator can check by hand before a deployment.
-- CI fails on a type error, a build error, a secret in the client bundle, or a schema
+- ✅ **The verification job is green** — the R-TEST-WEB-5 sequence ran end to end against a real
+  stack and every step appears in `app.audit_log` with the acting operator.
+- ⬜ **A chapter assigned through the console reaches a signed-in app client through delta sync.**
+  Still open, and human.
+- ✅ `npm run check-stack` passes against that stack — it runs first in the job, so this is
+  implied by the above, but it is the criterion an operator can check by hand before a
+  deployment.
+- ✅ CI fails on a type error, a build error, a secret in the client bundle, or a schema
   divergence.
 
 ---
@@ -250,7 +266,7 @@ In roughly the order the requirements justify, not a commitment:
 
 | Risk | Impact | Where it bites | Mitigation |
 |---|---|---|---|
-| The first cut has never run against a database | Any of its operations may fail at first use, in front of a coordinator | M4 | The verification job, gated as M4's exit criterion; the preflight runs first so the first failure is diagnostic |
+| ~~The first cut has never run against a database~~ | — | — | **Retired 2026-08-20**: the verification passes in CI and now runs on every change, so a regression surfaces on the pull request rather than in front of a coordinator |
 | Service key leaks from the console | Full compromise of every project's data | Any | `server-only` guards, no `NEXT_PUBLIC_*`, and a bundle check that fails the build — negative-tested against each shape it looks for |
 | Key rotation misses the console | Account creation and password reset silently stop working | Any, after a rotation | §4.1 #1; the console named in DB R-OPS-4's runbook |
 | Deployment target chosen late | Rework of pool size and project-creation flow after the fact | M4/M5 boundary | §4.1 #2, forced to a decision before deployment |
@@ -271,9 +287,11 @@ during a pilot.
 
 The three things that need a name against them:
 
-1. Who watches the M4 verification (§4.2) and acts on what it reports. CI now runs it, which
-   answers "who types the commands" and not "who reads a red build at 9am and decides whether
-   the console or the database is wrong". Those are different people's judgement.
+1. Who reads a red build. CI runs the verification on every change, which answers "who types
+   the commands" and not "who sees it fail at 9am and decides whether the console or the
+   database is wrong". The schema guard makes that question sharper, not softer: when
+   `scripture-bridge-db` renames a column, this repository goes red for a change nobody here
+   made.
 2. Who holds the service key and rotates it (§4.1 #1).
 3. Who the coordinator is in §5's pilot-gate test, and when they are available. They are not a
    developer, so their time has to be asked for rather than assumed.

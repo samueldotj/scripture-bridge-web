@@ -1,6 +1,6 @@
 # Scripture Bridge — Web Console Requirements
 
-**Status:** Draft — written against the first cut of the implementation
+**Status:** Draft — §6 verified against a live stack in CI as of 2026-08-20
 **Scope:** The administrative console for the Scripture Bridge backend
 **Companion documents:** `scripture-bridge-db/docs/requirements.md` (**DB**) and
 `scripture-bridge-android-app/docs/requirements.md` (**APP**)
@@ -521,11 +521,18 @@ patience and by the cost of the underlying operation, not by DB §15's device-fa
 - **R-TEST-WEB-6.** Both checks are negative-tested: each has been shown to fail on a
   deliberately introduced defect. A check that has never failed is a check nobody has confirmed
   is wired up.
+- **R-TEST-WEB-8. No assertion may skip itself silently.** A check conditioned on fixture data
+  that a fresh database does not contain will pass by not running, which is the same defect as a
+  guard with nothing to compare against (R-TEST-WEB-3). Fixtures an assertion needs are created
+  by the sequence, and their absence fails rather than skips. Found in the first green run: the
+  non-member assignment check looked for "any other profile" and skipped itself, because a reset
+  database held only the account the run had just created.
 - **R-TEST-WEB-4. An end-to-end run against a live stack is required before the pilot.** It is
   automated as `verify-e2e` and runs in CI against a full Supabase stack, which is where the
   Docker and CLI dependencies live — they are not required on a developer's machine. The
   preflight of §11.2 runs first in that job, so a stack missing the console API is reported as
-  that rather than as whichever operation happens to fail.
+  that rather than as whichever operation happens to fail. **Satisfied 2026-08-20**; it now runs
+  on every change rather than once.
 - **R-TEST-WEB-5.** The end-to-end run covers, at minimum: create an account; confirm the
   profile trigger fired and `must_change_password` defaults true; create a project and confirm
   it materialised in full rather than as an empty shell; refuse an unseeded versification
@@ -603,7 +610,8 @@ correctly by a tired person.
 | 2 | **Deployment target is unchosen**, and it decides three things: pool size, whether project creation can complete in one request, and whether the rate limiter is honest (§11.3). | Decision |
 | 3 | If the console is ever run behind more than one replica, the sign-in limiter needs shared storage (R-SEC-WEB-11). | Decision, follows #2 |
 | 4 | Does a read-only operator role have a real user? A partner organisation wanting progress visibility without provisioning rights is the plausible case, and nobody has asked for it yet. | Decision |
-| 5 | **The end-to-end run of R-TEST-WEB-5 has never executed.** It is written and wired into CI, but the machine it was written on cannot run a Supabase stack, so its first run will be its first push. Expect the workflow itself to need a pass or two before the sequence it drives is the thing being tested. | Verification |
+| 5 | ~~The end-to-end run of R-TEST-WEB-5 has never executed.~~ **Closed 2026-08-20:** green in CI against a full stack, 40 assertions. The workflow needed one fix first, as expected. One criterion of roadmap M4 remains and is not automatable — confirming an assignment reaches a device through delta sync (#11). | Closed |
+| 11 | **A chapter assigned through the console has never been shown to reach a device.** The verification proves the change-log entry exists; delta sync delivering it to a signed-in app client is untested from this side and needs the app team. | Verification |
 | 6 | Session lifetime is asserted at 8 hours from the shape of a coordinator's day, not measured. Revisit if operators report being signed out mid-task. | Verification |
 | 7 | Who holds the console's copy of the service key, and how is its rotation coordinated with DB R-OPS-4? Roadmap §8's ownership question, narrowed to the one operational consequence. | Dependency |
 | 8 | Project creation for a whole Bible has never been timed against a hosted project, only reasoned about from the row count. It is the console's only volume-bound operation and the one that constrains deployment. | Verification |
