@@ -352,6 +352,42 @@ Each operation below is required for the pilot gate unless marked otherwise.
   other than through `app.console_audit`. The table is append-only at the database level, so
   this is a property of the system rather than a promise of the console.
 
+### 6.9 USFM export
+
+- **R-FN-WEB-26.** The console exports a book as USFM, downloaded as a file.
+- **R-FN-WEB-27. The export is structurally plain, and this is not a choice made here.** DB
+  R-USFM-1 stores translated verse text only; DB R-USFM-2 offers two futures — markers preserved
+  in a sidecar (`app.chapter_markup`), or an export the publisher's operator re-marks. No sidecar
+  exists in the schema, and DB R-USFM-3 forbids export from requiring a schema element the app's
+  write path does not maintain. **Structurally plain is therefore the only output the stored data
+  can support.** If the sidecar is ever built, that decision belongs in the database repository
+  and this requirement changes after it, not before.
+- **R-FN-WEB-28.** The file carries `\id`, `\ide UTF-8`, `\h`, `	oc1–3`, `\mt1`, and per
+  chapter a `\c` followed by a single `\p` and its verses. The `\p` is the only structure
+  asserted: USFM expects verses inside a paragraph, and anything beyond that would be inventing
+  structure nobody recorded.
+- **R-FN-WEB-29.** An untranslated verse is exported as a bare ` N`. Dropping it would read to
+  the publisher as a deliberate omission rather than as work not yet done, and the count is
+  reported to the operator before they send the file on.
+- **R-FN-WEB-30.** Verse text is flattened to one line. A newline would end the `` line and
+  make the remainder body text belonging to no verse — the file still opens and the verse is
+  silently truncated, which is the worst failure available here.
+- **R-FN-WEB-31.** A backslash in verse text is reported and the text is exported **unchanged**.
+  It cannot be escaped in USFM, and altering a translator's text during export is not the
+  console's decision to make.
+- **R-FN-WEB-32.** Filenames follow Paratext's `<NN><CODE><ABBREV>.usfm`, where `NN` reserves 40:
+  `ref.book_canon` numbers the New Testament 40–66 and Paratext numbers it 41–67. Off by one and
+  the publishing tool sorts Matthew before Malachi.
+- **R-FN-WEB-33.** Export is recorded in the audit log. It is read-only and takes no lock, but it
+  is the one operation that removes translation text from the system, and "who took a copy, and
+  when" is asked after the fact or not at all.
+- **R-FN-WEB-34.** The export endpoint verifies the session itself. It returns project content
+  and is a route handler, so it does not pass through the layout guard (R-SEC-WEB-5).
+
+**Import is not built** and is blocked, unlike export. DB R-USFM-2 requires the round-trip
+question resolved *before* import exists: a source file's markers cannot be reconstructed from
+verse-text-only storage, so importing one would silently discard them.
+
 ---
 
 ## 7. Console-Level Policy
@@ -578,7 +614,8 @@ correctly by a tired person.
 7. Password reset with re-arm (§6.6).
 8. Project, book, and chapter read surfaces with progress (§6.7).
 9. Audit log display (§6.8).
-10. Preflight (§11.2).
+10. USFM export (§6.9).
+11. Preflight (§11.2).
 
 ### 14.2 Out of scope, deliberately
 

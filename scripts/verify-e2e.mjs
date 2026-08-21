@@ -25,7 +25,8 @@
  */
 
 import { Client } from 'pg';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHmac } from 'node:crypto';
+import { buildUsfm, summariseUsfm } from '../src/lib/usfm.ts';
 
 const OK = '  [32mok[0m   ';
 const BAD = '  [31mFAIL[0m ';
@@ -477,6 +478,78 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  section('USFM export (WEB §6.9)');
+  // -------------------------------------------------------------------------
+
+  if (projectId) {
+    // The same query the console's export route runs, against a real
+    // materialised book. The generator is unit-tested on fixtures in
+    // scripts/test-usfm.mjs; what this adds is that it holds against 1,071
+    // real verse rows produced by api.create_project rather than by hand.
+    const rows = (await db.query(
+      `select p.name as project_name, p.language_code,
+              b.code as book_code, b.name as book_name,
+              bc.name_en as canon_name, bc.sort_order, bc.testament,
+              c.number as chapter_number, v.number as verse_number, v.text
+         from app.book b
+         join app.project p on p.id = b.project_id
+         join ref.book_canon bc on bc.code = b.code
+         join app.chapter c on c.book_id = b.id
+         join app.verse v on v.chapter_id = c.id
+        where b.project_id = $1 and b.code = 'MAT'
+        order by c.number, v.number`,
+      [projectId],
+    )).rows;
+
+    check(rows.length === 1071, `the export query returns every verse (${rows.length})`);
+
+    const chapters = [];
+    let cur = null;
+    for (const row of rows) {
+      if (!cur || cur.number !== row.chapter_number) {
+        cur = { number: row.chapter_number, verses: [] };
+        chapters.push(cur);
+      }
+      cur.verses.push({ number: row.verse_number, text: row.text });
+    }
+
+    const first = rows[0];
+    const usfm = buildUsfm(
+      { name: first.project_name, languageCode: first.language_code },
+      {
+        code: first.book_code, name: first.book_name, canonName: first.canon_name,
+        sortOrder: first.sort_order, testament: first.testament, chapters,
+      },
+    );
+
+    // Marker counting lives in summariseUsfm, and no backslash literal appears
+    // in this file. The first version of these assertions wrote them inline
+    // and got the escaping wrong: a single backslash makes '\i' into 'i' and
+    // turns the regex \v into a vertical tab, so the checks did not fail — they
+    // quietly asserted something else and passed until CI ran them for real.
+    const summary = summariseUsfm(usfm.content);
+
+    check(summary.startsWithId, 'the file opens with the id marker');
+    check(usfm.stats.chapters === 28, `Matthew exports 28 chapters (${usfm.stats.chapters})`);
+    check(summary.chapters === 28, `every chapter emits a chapter marker (${summary.chapters})`);
+    check(
+      summary.paragraphs === 28,
+      `every chapter opens exactly one paragraph (${summary.paragraphs})`,
+    );
+    check(summary.verses === 1071, `every verse emits a verse marker (${summary.verses})`);
+    // A freshly materialised project has no translated text, so this run also
+    // covers the empty-verse path end to end.
+    check(
+      usfm.stats.emptyVerses === 1071,
+      'an untranslated book exports as empty verse markers rather than dropping them',
+    );
+    check(
+      /^41MAT[A-Z0-9]+\.usfm$/.test(usfm.filename),
+      `the filename uses Paratext numbering (${usfm.filename})`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
   section('Audit trail (DB R-AUTH-DB-12)');
   // -------------------------------------------------------------------------
 
@@ -528,6 +601,81 @@ try {
       'security headers are present',
       `x-frame-options: ${login.headers.get('x-frame-options')}`,
     );
+
+    // The export route returns project content, so it carries its own session
+    // check rather than relying on the layout it does not pass through
+    // (WEB R-SEC-WEB-5). A cookie that exists but does not verify is the case
+    // middleware cannot catch, so it is the one asserted here.
+    const bookId = await scalar(
+      `select id from app.book where project_id = $1 and code = 'MAT'`, [projectId],
+    );
+    const exportPath = `/projects/${projectId}/books/${bookId}/export`;
+
+    const forged = await fetch(`${base}${exportPath}`, {
+      headers: { cookie: 'sb_console_session=forged.notavalidsignature' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20_000),
+    });
+    check(
+      forged.status >= 300 && forged.status < 400,
+      'an export request with an unverifiable session cookie is refused',
+      `status ${forged.status}`,
+    );
+
+    // A genuine session, minted with the secret this process already holds.
+    //
+    // The cookie format is duplicated from src/lib/session.ts rather than
+    // imported: that module pulls in `server-only` and next/headers and cannot
+    // load outside Next. The duplication is deliberate and small; if the format
+    // changes, this assertion fails, which is the outcome worth having.
+    const operatorEmail = (process.env.CONSOLE_OPERATORS ?? '').split(',')[0].trim().toLowerCase();
+    const secret = process.env.CONSOLE_SESSION_SECRET;
+
+    if (operatorEmail && secret) {
+      const payload = Buffer.from(JSON.stringify({
+        email: operatorEmail,
+        authUserId: '00000000-0000-0000-0000-000000000000',
+        expiresAt: Math.floor(Date.now() / 1000) + 600,
+      })).toString('base64url');
+      const sig = createHmac('sha256', secret).update(payload).digest('base64url');
+
+      const res = await fetch(`${base}${exportPath}`, {
+        headers: { cookie: `sb_console_session=${payload}.${sig}` },
+        signal: AbortSignal.timeout(60_000),
+      });
+      check(res.status === 200, 'an authenticated export returns the file', `status ${res.status}`);
+
+      const disposition = res.headers.get('content-disposition') ?? '';
+      check(
+        /attachment; filename="41MAT[A-Z0-9]+\.usfm"/.test(disposition),
+        'it is served as a download with a Paratext filename',
+        disposition,
+      );
+
+      const body = await res.text();
+      const served = summariseUsfm(body);
+      check(served.startsWithId, 'the downloaded file opens with the id marker');
+      check(
+        served.verses === 1071,
+        `the downloaded file carries every verse (${served.verses})`,
+      );
+      check(
+        (res.headers.get('x-usfm-warnings') ?? '').includes('Structurally plain'),
+        'the response carries the structurally-plain caveat',
+      );
+
+      // Export is read-only but removes translation text from the system, and
+      // "who took a copy, and when" is asked after the fact or not at all.
+      const exported = await scalar(
+        `select count(*)::int from app.audit_log
+          where action = 'book.export' and target_id = $1::uuid
+            and actor_label = $2`,
+        [bookId, `${operatorEmail}@console`],
+      );
+      check(exported === 1, 'the export is recorded in the audit log against the operator');
+    } else {
+      fail('CONSOLE_OPERATORS or CONSOLE_SESSION_SECRET is unset; the export route was not exercised');
+    }
   }
 } catch (err) {
   fail('the sequence stopped on an unexpected error', err.stack ?? String(err));

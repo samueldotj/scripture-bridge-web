@@ -42,6 +42,35 @@ export default async function BookPage({
         </p>
       </div>
 
+      <div className="card">
+        <h2>Export</h2>
+        <p className="hint">
+          Downloads this book as USFM. The file carries verse text only: paragraphs, headings,
+          poetry, and footnotes are not stored by the app and must be re-marked by whoever
+          receives it.
+        </p>
+        <div className="actions-row">
+          <a
+            className="btn primary"
+            href={`/projects/${project.id}/books/${book.id}/export`}
+            download
+          >
+            Export {book.code} as USFM
+          </a>
+          {book.verse_count - book.verses_done > 0 ? (
+            <span className="muted" style={{ fontSize: 13 }}>
+              {(book.verse_count - book.verses_done).toLocaleString()} of{' '}
+              {book.verse_count.toLocaleString()} verses are not yet marked done — they export as
+              empty verse markers.
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>
+              Every verse is marked done.
+            </span>
+          )}
+        </div>
+      </div>
+
       {members.length === 0 ? (
         <p className="notice warn">
           This project has no members, so nothing can be assigned yet.{' '}
