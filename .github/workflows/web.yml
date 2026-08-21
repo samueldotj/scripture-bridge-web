@@ -1,0 +1,174 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: typecheck, build, bundle, schema
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The schema guard reads the migrations of another repository
+      # (WEB R-TEST-WEB-3). Checked out beside this one so the guard has
+      # something to compare against; without it the job would pass vacuously,
+      # which is the failure mode that check exists to prevent.
+      - name: Check out the database repository
+        uses: actions/checkout@v4
+        with:
+          repository: samueldotj/scripture-bridge-db
+          path: .scripture-bridge-db
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Versions
+        run: |
+          echo "::notice::node=$(node -v) npm=$(npm -v) next=$(node -p "require('./package.json').dependencies.next")"
+
+      - name: Install
+        run: bash scripts/ci-run.sh "npm ci" npm ci
+
+      - name: Typecheck
+        run: bash scripts/ci-run.sh "typecheck" npx tsc --noEmit
+
+      # WEB R-TEST-WEB-3. Runs before the build because it is fast and because a
+      # schema divergence explains a build that would otherwise fail confusingly.
+      - name: Schema guard
+        env:
+          SB_DB_REPO: .scripture-bridge-db
+        run: bash scripts/ci-run.sh "schema guard" node scripts/check-schema.mjs
+
+      # Placeholder values, deliberately. The build must not need real
+      # credentials — if it ever does, something is being read at build time
+      # that should be read per request, and these values will be in the output
+      # for the next step to find.
+      - name: Build
+        env:
+          DATABASE_URL: postgresql://ci:ci-placeholder-value@127.0.0.1:54322/postgres
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-key-value
+          SUPABASE_ANON_KEY: ci-placeholder-anon-key-value
+          CONSOLE_OPERATORS: ci@example.test
+          CONSOLE_SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
+        run: bash scripts/ci-run.sh "build" npm run build
+
+      # WEB R-SEC-WEB-2. The same placeholders are passed here: the check looks
+      # for the values this build would have inlined, and the shape rules catch
+      # a real key that was never in this environment.
+      - name: Client bundle
+        env:
+          DATABASE_URL: postgresql://ci:ci-placeholder-value@127.0.0.1:54322/postgres
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-key-value
+          SUPABASE_ANON_KEY: ci-placeholder-anon-key-value
+          CONSOLE_SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
+        run: bash scripts/ci-run.sh "bundle check" node scripts/check-bundle.mjs
+
+  e2e:
+    name: M4 verification against a live stack
+    runs-on: ubuntu-latest
+
+    # Job-level rather than per-step. These two are needed by the preflight, the
+    # build, the console, and the verification — four of the six steps — and
+    # setting them individually is how the first run failed: the preflight was
+    # the one step that did not have them. The stack's own URL and keys are not
+    # here because they do not exist until `supabase start` has run; they are
+    # appended to the environment mid-job.
+    env:
+      CONSOLE_OPERATORS: ci@example.test
+      CONSOLE_SESSION_SECRET: ci-placeholder-session-secret-at-least-32-chars
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the database repository
+        uses: actions/checkout@v4
+        with:
+          repository: samueldotj/scripture-bridge-db
+          path: .scripture-bridge-db
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          # Pinned for the same reason the database repository pins it: with
+          # `latest`, an upstream release can turn CI red with no change here.
+          version: 2.115.0
+
+      # The full stack, not just Postgres. GoTrue is not optional for this job —
+      # account creation and password reset are HTTP operations (DB
+      # R-AUTH-DB-5), and they are the console's most important function.
+      - name: Start the stack
+        working-directory: .scripture-bridge-db
+        run: bash scripts/ci-run.sh "supabase start" supabase start -x studio,imgproxy,inbucket,realtime,edge-runtime,logflare,vector,supavisor
+
+      - name: Reset from zero
+        working-directory: .scripture-bridge-db
+        run: bash scripts/ci-run.sh "supabase db reset" supabase db reset
+
+      # `supabase status -o env` prints the URL and both keys of the stack just
+      # started. Masked before anything else happens with them.
+      - name: Read stack credentials
+        working-directory: .scripture-bridge-db
+        run: |
+          eval "$(supabase status -o env)"
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          echo "::add-mask::$ANON_KEY"
+          {
+            echo "SUPABASE_URL=$API_URL"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "DATABASE_URL=$DB_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Install
+        run: bash scripts/ci-run.sh "npm ci" npm ci
+
+      # WEB §11.2. Runs first so that a stack missing the console API is
+      # reported as that, rather than as whichever operation happens to fail.
+      - name: Preflight
+        run: bash scripts/ci-run.sh "check-stack" npm run check-stack
+
+      - name: Build
+        run: bash scripts/ci-run.sh "build" npm run build
+
+      # Started before the verification so its HTTP phase has something to talk
+      # to. `next start` backgrounded; the wait loop is what makes the failure
+      # "the console did not start" rather than a connection refused inside the
+      # verification.
+      - name: Start the console
+        run: |
+          npm run start -- --port 3000 > console.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:3000/login; then
+              echo "console up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the console did not start within 30s: $(tail -c 2000 console.log)"
+          exit 1
+
+      # WEB R-TEST-WEB-5, roadmap §4.2. This is the milestone's exit criterion.
+      - name: M4 verification sequence
+        env:
+          CONSOLE_URL: http://127.0.0.1:3000
+        run: bash scripts/ci-run.sh "M4 verification" node scripts/verify-e2e.mjs
+
+      - name: Console log on failure
+        if: failure()
+        run: tail -c 4000 console.log || true
+
+      - name: Service status on failure
+        if: failure()
+        working-directory: .scripture-bridge-db
+        run: supabase status || true
