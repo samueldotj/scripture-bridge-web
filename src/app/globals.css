@@ -207,6 +207,28 @@ button.link {
 button.link:hover:not(:disabled) { text-decoration: underline; }
 button.small { padding: 4px 9px; font-size: 13px; }
 
+/*
+ * A link that looks like a button.
+ *
+ * Used for downloads, where the control must be an <a href> so the browser
+ * handles the file. A <button> nested inside an <a> is invalid HTML and its
+ * click behaviour differs between browsers — which for an export control means
+ * a coordinator clicking and nothing happening.
+ */
+a.btn {
+  display: inline-block;
+  font-weight: 550;
+  font-size: 13px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+a.btn:hover { border-color: var(--text-dim); text-decoration: none; }
+a.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
 fieldset { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin: 0; }
 legend { font-size: 13px; font-weight: 550; padding: 0 6px; }
 

@@ -55,8 +55,8 @@ first cut       M4 verification      deployment        M5 field         pilot
 (delivered) ──► in CI, GREEN    ──►  target + CI  ──►  readiness   ──►  gate
                                                        (fonts, export)
                      │                    │                 │
-                     └── delta sync       └── blocked       └── blocked on
-                         to a device          on §4.1 #2        DB §17 #4
+                     └── delta sync       └── blocked       └── fonts; import
+                         to a device          on §4.1 #2        blocked on DB §17 #4
                          still human
 ```
 
@@ -69,9 +69,9 @@ The three things that can stall this path, in order of likelihood:
 2. **The deployment target is unchosen** (§4.1 #2), and it decides three implementation details
    that are cheap now and awkward later: connection pool size, whether whole-Bible project
    creation survives a host's request ceiling, and whether the sign-in rate limiter is honest.
-3. **USFM export has no contract** (DB §17 #4). It is the last thing the pilot needs and the
-   only console feature that cannot be started at all until another repository decides
-   something.
+3. **USFM import has no contract** (DB §17 #4), and is the only console feature that cannot be
+   started until another repository decides something. Export is built and does not need it;
+   the pilot gate's vertical slice ends in export, not import, so this does not block the pilot.
 
 ---
 
@@ -176,9 +176,12 @@ that blocked React hydration, a sign-in path that turned an unreachable auth ser
   verifies the `sha256` it was given and must never be able to replace the asset it is checking.
   Needs the storage path, the integrity hash, and the licence gate — a console screen and no new
   database work.
-- **USFM export**, in whichever shape DB §17 #4 decides. Blocked, and not startable early: the
-  decision determines whether export is a download of generated text or a round-trip through
-  sidecar markup, and those are different features.
+- ~~**USFM export**, in whichever shape DB §17 #4 decides.~~ **Built 2026-08-20.** It was not
+  blocked, and this roadmap said it was. DB R-USFM-3 places export in the console as a read-only
+  operation over data the write path already maintains; what DB §17 #4 gates is **import**, which
+  cannot be built until the round-trip question is settled because a source file's markers cannot
+  be stored. Export produces structurally plain USFM — not as a choice, but because no sidecar
+  exists in the schema and R-USFM-3 forbids depending on one that does not (WEB §6.9).
 - **A destructive-operation runbook for the console**, alongside DB R-OPS-5. Reopen is the only
   destructive operation the console exposes; what is missing is the written answer to "a
   coordinator reopened the wrong chapter, now what".
@@ -190,7 +193,10 @@ that blocked React hydration, a sign-in path that turned an unreachable auth ser
 - A font is uploaded through the console and rendered by a device that did not previously have
   it.
 - One chapter is exported in a form the partner organisation's publishing tooling opens cleanly
-  — the console's half of the pilot gate's vertical slice.
+  — the console's half of the pilot gate's vertical slice. The export exists and is tested
+  against a real materialised book; **what remains is a person opening the output in the
+  partner's tool**, which is the only thing that settles whether "structurally plain" is
+  acceptable to them.
 - The rotation runbook lists every service-key holder, and the console is one of them.
 
 ---

@@ -73,7 +73,10 @@ export default async function ProjectPage({
 
       <section className="card">
         <h2>Books</h2>
-        <p className="hint">Open a book to assign its chapters or reopen an approved one.</p>
+        <p className="hint">
+          Open a book to assign its chapters or reopen an approved one. USFM exports verse text
+          only — see the book page for what that leaves out.
+        </p>
         {books.length === 0 ? (
           <p className="empty">This project has no books.</p>
         ) : (
@@ -87,6 +90,7 @@ export default async function ProjectPage({
                   <th className="num">Approved</th>
                   <th>Verses done</th>
                   <th className="num">Flagged</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -110,6 +114,11 @@ export default async function ProjectPage({
                       ) : (
                         <span className="muted">0</span>
                       )}
+                    </td>
+                    <td className="nowrap">
+                      <a href={`/projects/${project.id}/books/${b.id}/export`} download>
+                        USFM
+                      </a>
                     </td>
                   </tr>
                 ))}

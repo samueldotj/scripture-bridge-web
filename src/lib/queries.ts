@@ -344,3 +344,51 @@ export function dashboardStats(): Promise<DashboardStats | null> {
                 and workflow_state <> 'approved') as unassigned_chapters`,
   );
 }
+
+export interface ExportRow {
+  project_name: string;
+  language_code: string;
+  book_code: string;
+  book_name: string;
+  canon_name: string;
+  sort_order: number;
+  testament: 'ot' | 'nt';
+  chapter_number: number;
+  verse_number: number;
+  text: string;
+}
+
+/**
+ * Everything one book's USFM export needs, in one query.
+ *
+ * Flat rather than nested: a whole-Bible book is at most ~2,500 verses, and one
+ * ordered pass is cheaper to reason about than a join tree assembled in
+ * JavaScript. The ordering is the export's ordering, so the generator does not
+ * depend on it but also never has to fight it.
+ *
+ * Reads `app.verse` and `ref.book_canon` only — R-USFM-3 requires export to be
+ * read-only over data the app's write path already maintains, which is what
+ * makes it possible without a schema change.
+ */
+export function bookForExport(bookId: string): Promise<ExportRow[]> {
+  return query<ExportRow>(
+    `select p.name         as project_name,
+            p.language_code,
+            b.code          as book_code,
+            b.name          as book_name,
+            bc.name_en      as canon_name,
+            bc.sort_order,
+            bc.testament,
+            c.number        as chapter_number,
+            v.number        as verse_number,
+            v.text
+       from app.book b
+       join app.project p on p.id = b.project_id
+       join ref.book_canon bc on bc.code = b.code
+       join app.chapter c on c.book_id = b.id
+       join app.verse v on v.chapter_id = c.id
+      where b.id = $1
+      order by c.number, v.number`,
+    [bookId],
+  );
+}

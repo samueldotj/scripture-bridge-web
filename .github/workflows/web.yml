@@ -38,6 +38,13 @@ jobs:
       - name: Typecheck
         run: bash scripts/ci-run.sh "typecheck" npx tsc --noEmit
 
+      # The USFM generator is the one thing whose output is opened by software
+      # outside this project, and the one place a defect is invisible here and
+      # obvious to the partner organisation. Unit-tested on fixtures; the e2e
+      # job additionally runs it over a real materialised book.
+      - name: USFM generator tests
+        run: bash scripts/ci-run.sh "usfm tests" node --test scripts/test-usfm.mjs
+
       # WEB R-TEST-WEB-3. Runs before the build because it is fast and because a
       # schema divergence explains a build that would otherwise fail confusingly.
       - name: Schema guard
