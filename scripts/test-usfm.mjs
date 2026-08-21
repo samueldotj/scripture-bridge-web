@@ -16,7 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildUsfm, paratextNumber } from '../src/lib/usfm.ts';
+import { buildUsfm, paratextNumber, summariseUsfm } from '../src/lib/usfm.ts';
 
 const project = { name: 'Tamil Pilot', languageCode: 'ta' };
 
@@ -158,4 +158,45 @@ test('a project name with punctuation still produces a usable filename', () => {
 
 test('the file ends with a newline', () => {
   assert.ok(buildUsfm(project, book()).content.endsWith('\n'));
+});
+
+/**
+ * summariseUsfm is the only place outside the generator that knows what a USFM
+ * marker looks like. These tests are what stop an escaping mistake in it from
+ * silently weakening the verification sequence that depends on it: a wrong
+ * escape makes these counts wrong, and a wrong count fails here.
+ */
+test('summariseUsfm counts the markers in a known file', () => {
+  const chapters = [
+    { number: 1, verses: [{ number: 1, text: 'a' }, { number: 2, text: 'b' }] },
+    { number: 2, verses: [{ number: 1, text: 'c' }] },
+    { number: 3, verses: [{ number: 1, text: '' }] },
+  ];
+  const { content } = buildUsfm(project, book({ chapters }));
+  const summary = summariseUsfm(content);
+
+  assert.equal(summary.startsWithId, true);
+  assert.equal(summary.chapters, 3);
+  // One paragraph per chapter, and no more: anything else would be structure
+  // the export invented.
+  assert.equal(summary.paragraphs, 3);
+  // Four verses including the untranslated one, which keeps its marker.
+  assert.equal(summary.verses, 4);
+});
+
+test('summariseUsfm does not mistake ordinary text for markers', () => {
+  // A verse mentioning "c 1" or containing a lone v must not inflate the
+  // counts — the patterns are anchored to the start of a line for this reason.
+  const { content } = buildUsfm(
+    project,
+    book({
+      chapters: [
+        { number: 1, verses: [{ number: 1, text: 'see c 1 and v 2 and p' }] },
+      ],
+    }),
+  );
+  const summary = summariseUsfm(content);
+  assert.equal(summary.chapters, 1);
+  assert.equal(summary.paragraphs, 1);
+  assert.equal(summary.verses, 1);
 });

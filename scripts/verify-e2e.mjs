@@ -26,7 +26,7 @@
 
 import { Client } from 'pg';
 import { randomBytes, createHmac } from 'node:crypto';
-import { buildUsfm } from '../src/lib/usfm.ts';
+import { buildUsfm, summariseUsfm } from '../src/lib/usfm.ts';
 
 const OK = '  [32mok[0m   ';
 const BAD = '  [31mFAIL[0m ';
@@ -522,20 +522,21 @@ try {
       },
     );
 
-    check(usfm.content.startsWith('\id MAT '), 'the file opens with the \id marker');
+    // Marker counting lives in summariseUsfm, and no backslash literal appears
+    // in this file. The first version of these assertions wrote them inline
+    // and got the escaping wrong: a single backslash makes '\i' into 'i' and
+    // turns the regex \v into a vertical tab, so the checks did not fail — they
+    // quietly asserted something else and passed until CI ran them for real.
+    const summary = summariseUsfm(usfm.content);
+
+    check(summary.startsWithId, 'the file opens with the id marker');
     check(usfm.stats.chapters === 28, `Matthew exports 28 chapters (${usfm.stats.chapters})`);
+    check(summary.chapters === 28, `every chapter emits a chapter marker (${summary.chapters})`);
     check(
-      (usfm.content.match(/^\c /gm) || []).length === 28,
-      'every chapter emits a \c marker',
+      summary.paragraphs === 28,
+      `every chapter opens exactly one paragraph (${summary.paragraphs})`,
     );
-    check(
-      (usfm.content.match(/^\p$/gm) || []).length === 28,
-      'every chapter opens a paragraph',
-    );
-    check(
-      (usfm.content.match(/^\v /gm) || []).length === 1071,
-      'every verse emits a \v marker',
-    );
+    check(summary.verses === 1071, `every verse emits a verse marker (${summary.verses})`);
     // A freshly materialised project has no translated text, so this run also
     // covers the empty-verse path end to end.
     check(
@@ -652,10 +653,11 @@ try {
       );
 
       const body = await res.text();
-      check(body.startsWith('\id MAT '), 'the downloaded file opens with the \id marker');
+      const served = summariseUsfm(body);
+      check(served.startsWithId, 'the downloaded file opens with the id marker');
       check(
-        (body.match(/^\v /gm) || []).length === 1071,
-        'the downloaded file carries every verse',
+        served.verses === 1071,
+        `the downloaded file carries every verse (${served.verses})`,
       );
       check(
         (res.headers.get('x-usfm-warnings') ?? '').includes('Structurally plain'),

@@ -104,6 +104,36 @@ function flatten(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+export interface UsfmSummary {
+  startsWithId: boolean;
+  chapters: number;
+  paragraphs: number;
+  verses: number;
+}
+
+/**
+ * Counts the markers in generated USFM.
+ *
+ * Exists so that nothing outside this file has to write a backslash literal.
+ * In a JavaScript string `'\i'` is just `'i'`, and in a regular expression
+ * `\v` is a vertical tab — a single backslash does not fail loudly, it
+ * quietly asserts something else and the check passes by not testing what it
+ * claims to. That defect reached CI once in `verify-e2e.mjs` and survived a
+ * local inspection, because `JSON.stringify` renders one backslash as two.
+ *
+ * Every marker literal in this project now lives here, in a file whose own
+ * unit tests compare these counts against known fixtures — so an escaping
+ * mistake breaks a test rather than silently weakening one.
+ */
+export function summariseUsfm(content: string): UsfmSummary {
+  return {
+    startsWithId: content.startsWith('\\id '),
+    chapters: (content.match(/^\\c /gm) ?? []).length,
+    paragraphs: (content.match(/^\\p$/gm) ?? []).length,
+    verses: (content.match(/^\\v /gm) ?? []).length,
+  };
+}
+
 export function buildUsfm(project: ExportProject, book: ExportBook): UsfmResult {
   const lines: string[] = [];
   const warnings: string[] = [];
