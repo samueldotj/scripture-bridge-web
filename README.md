@@ -128,7 +128,7 @@ All of it runs on push — see [.github/workflows/web.yml](.github/workflows/web
 job starts a full Supabase stack, since Docker and the Supabase CLI live in CI rather than on a
 developer's machine.
 
-The e2e job is green: 40 assertions covering provisioning, project materialisation, membership,
+The e2e job is green: 39 assertions covering provisioning, project materialisation, membership,
 assignment, reopen, password reset, the audit trail, and the console's own HTTP surface. The
 load-bearing one is that assignment writes a change-log entry — the defect DB migration 0015 was
 written to fix, confirmed here by its first caller outside pgTAP.

@@ -63,7 +63,7 @@ first cut       M4 verification      deployment        M5 field         pilot
 The three things that can stall this path, in order of likelihood:
 
 1. ~~Nothing here has ever touched a real database.~~ **Closed 2026-08-20.** The verification
-   runs in CI against a full stack and passes: 40 assertions covering provisioning, project
+   runs in CI against a full stack and passes: 39 assertions covering provisioning, project
    materialisation, membership, assignment, reopen, password reset, and the audit trail. What is
    left of it is the delta-sync confirmation, which needs a device and a person (§4.2).
 2. **The deployment target is unchosen** (§4.1 #2), and it decides three implementation details
