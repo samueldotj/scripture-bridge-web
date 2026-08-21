@@ -535,6 +535,19 @@ patience and by the cost of the underlying operation, not by DB §15's device-fa
   connection string must be the pooler; the pool size must be reduced, since each instance holds
   its own; and the host's maximum request duration must accommodate project creation or projects
   must be created a few books at a time (R-NFR-WEB-1).
+- **R-OPS-WEB-10. The database connection verifies TLS, and the CA is supplied rather than the
+  check disabled.** A hosted Supabase project presents a chain absent from Node's default store,
+  so strict verification fails; the remedy is `DATABASE_CA_CERT`, not `rejectUnauthorized:
+  false`. This connection carries every project's translation text and is made by the component
+  holding the service key — encrypted-but-unauthenticated is a poor default for it. Skipping
+  verification remains available as `?sslmode=no-verify` in the URL, where it is visible to
+  anyone reading the configuration rather than buried in code.
+- **R-OPS-WEB-11.** The TLS decision is made in one place shared by the console, the preflight,
+  and the verification sequence. Three programs connect to this database; a decision made three
+  times will differ in whichever of them is run least.
+- **R-OPS-WEB-12.** A TLS failure is reported with the remedy, not just the driver's message.
+  "self-signed certificate in certificate chain" is true of every hosted project and says nothing
+  about what to do; it is the first error anyone pointing the console at a real project will see.
 - **R-OPS-WEB-9.** The service key rotates with the database repository's rotation runbook
   (DB R-OPS-4). The console holds a copy, and a rotation that misses it takes account creation
   and password reset offline — the two operations whose absence is least tolerable.
