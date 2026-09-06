@@ -69,6 +69,31 @@ export default async function ProjectPage({
         </div>
       </div>
 
+      <section className="card">
+        <h2>Export</h2>
+        <p className="hint">
+          Downloads every book of this project as one zip of USFM files, in canonical order. The
+          files carry verse text only: paragraphs, headings, poetry, and footnotes are not stored
+          by the app and must be re-marked by whoever receives them.
+        </p>
+        <div className="actions-row">
+          <a className="btn primary" href={`/projects/${project.id}/export`} download>
+            Export all {project.book_count} book{project.book_count === 1 ? '' : 's'} as USFM
+          </a>
+          {project.verse_count - project.verses_done > 0 ? (
+            <span className="muted" style={{ fontSize: 13 }}>
+              {(project.verse_count - project.verses_done).toLocaleString()} of{' '}
+              {project.verse_count.toLocaleString()} verses are not yet marked done — they export
+              as empty verse markers.
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>
+              Every verse is marked done.
+            </span>
+          )}
+        </div>
+      </section>
+
       <MembersCard projectId={project.id} members={members} accounts={accounts} />
 
       <section className="card">

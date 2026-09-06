@@ -40,7 +40,7 @@ this console is the only thing between a translator and permanent lockout.
 |---|---|
 | Overview | Fleet-wide counts, project progress, recent privileged actions |
 | Projects | Create a project (books materialised from the versification scheme); per-project progress |
-| Project detail | Add members and change roles; per-book progress |
+| Project detail | Add members and change roles; per-book progress; export the whole project as a zip of USFM files |
 | Book detail | Assign a chapter's translator and reviewer; reopen an approved chapter; export the book as USFM |
 | Accounts | Create pre-confirmed accounts; reset a password and re-arm the forced change |
 | Audit log | Every privileged operation, with operator and before/after values, filterable |
@@ -140,7 +140,8 @@ change pending.
 | Command | Checks |
 |---|---|
 | `npm run check` | Typecheck, unit tests, build, client bundle, schema guard — everything that needs no database |
-| `npm test` | Unit tests for the USFM generator and the Postgres TLS decision |
+| `npm test` | Unit tests for the USFM generator, the ZIP writer, and the Postgres TLS decision |
+| `npm run verify-zip` | Builds an archive and extracts it with the OS's own extractor, not this repo's reader |
 | `npm run check-stack` | Preflight against a live stack: version, schemas, functions, seeded data, admin API, auth settings |
 | `npm run verify-e2e` | The full M4 sequence — provision, assign, reopen, reset — asserting audit and change-log outcomes |
 

@@ -672,6 +672,42 @@ try {
         [bookId, `${operatorEmail}@console`],
       );
       check(exported === 1, 'the export is recorded in the audit log against the operator');
+
+      // Whole-project export: one zip of per-book USFM files.
+      const zipRes = await fetch(`${base}/projects/${projectId}/export`, {
+        headers: { cookie: `sb_console_session=${payload}.${sig}` },
+        signal: AbortSignal.timeout(120_000),
+      });
+      check(zipRes.status === 200, 'an authenticated project export returns an archive',
+        `status ${zipRes.status}`);
+      check(
+        zipRes.headers.get('content-type') === 'application/zip',
+        'served as application/zip',
+        zipRes.headers.get('content-type'),
+      );
+      check(
+        /attachment; filename="[A-Z0-9]+-usfm-\d{4}-\d{2}-\d{2}\.zip"/.test(
+          zipRes.headers.get('content-disposition') ?? '',
+        ),
+        'with a dated archive filename',
+        zipRes.headers.get('content-disposition'),
+      );
+
+      const zipBytes = Buffer.from(await zipRes.arrayBuffer());
+      // "PK" — the local file header signature every reader looks for
+      // first. A response that is HTML or an error page fails here loudly.
+      check(
+        zipBytes.length > 4 && zipBytes.readUInt32LE(0) === 0x04034b50,
+        `the response is a real archive (${zipBytes.length} bytes)`,
+      );
+
+      const projectExported = await scalar(
+        `select count(*)::int from app.audit_log
+          where action = 'project.export' and target_id = $1::uuid
+            and actor_label = $2`,
+        [projectId, `${operatorEmail}@console`],
+      );
+      check(projectExported === 1, 'the project export is recorded against the operator');
     } else {
       fail('CONSOLE_OPERATORS or CONSOLE_SESSION_SECRET is unset; the export route was not exercised');
     }
