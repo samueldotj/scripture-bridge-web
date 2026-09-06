@@ -104,6 +104,78 @@ function flatten(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+export interface UsfmArchive {
+  filename: string;
+  entries: { name: string; content: string }[];
+  warnings: string[];
+  stats: { books: number; chapters: number; verses: number; emptyVerses: number };
+}
+
+/**
+ * Every book of a project, as the entries of one archive.
+ *
+ * USFM is one file per book by convention, so a project export is inherently a
+ * container of files. Books are emitted in canonical order rather than sorted
+ * by filename, so a publisher listing the archive sees Genesis before Matthew
+ * rather than 01GEN before 41MAT.
+ *
+ * Warnings are aggregated across books rather than concatenated: a whole-Bible
+ * export would otherwise produce sixty-six copies of the structurally-plain
+ * caveat, which is how a warning stops being read.
+ */
+export function buildProjectUsfm(
+  project: ExportProject,
+  books: readonly ExportBook[],
+  now: Date = new Date(),
+): UsfmArchive {
+  const ordered = [...books].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const entries: { name: string; content: string }[] = [];
+  const stats = { books: 0, chapters: 0, verses: 0, emptyVerses: 0 };
+  const booksWithEmpty: string[] = [];
+  const booksWithBackslash: string[] = [];
+
+  for (const book of ordered) {
+    const result = buildUsfm(project, book);
+    entries.push({ name: result.filename, content: result.content });
+
+    stats.books += 1;
+    stats.chapters += result.stats.chapters;
+    stats.verses += result.stats.verses;
+    stats.emptyVerses += result.stats.emptyVerses;
+
+    if (result.stats.emptyVerses > 0) booksWithEmpty.push(book.code);
+    if (result.warnings.some((w) => w.includes('backslash'))) booksWithBackslash.push(book.code);
+  }
+
+  const warnings: string[] = [];
+  if (booksWithEmpty.length > 0) {
+    warnings.push(
+      `${stats.emptyVerses} of ${stats.verses} verses have no text, across ${booksWithEmpty.length} book(s): ` +
+        `${booksWithEmpty.join(', ')}.`,
+    );
+  }
+  if (booksWithBackslash.length > 0) {
+    warnings.push(
+      `Verses containing a backslash, which the publishing tool will read as a marker, appear in: ` +
+        `${booksWithBackslash.join(', ')}. The text was exported unchanged.`,
+    );
+  }
+  warnings.push(
+    'Structurally plain: paragraphs, headings, poetry, and footnotes are not stored and must be re-marked.',
+  );
+
+  const stamp = now.toISOString().slice(0, 10);
+  return {
+    // Dated, because a coordinator exporting for a publisher does it more than
+    // once and needs to tell two downloads apart in the same folder.
+    filename: `${abbreviate(project.name)}-usfm-${stamp}.zip`,
+    entries,
+    warnings,
+    stats,
+  };
+}
+
 export interface UsfmSummary {
   startsWithId: boolean;
   chapters: number;
