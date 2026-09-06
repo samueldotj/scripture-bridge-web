@@ -41,10 +41,9 @@ this console is the only thing between a translator and permanent lockout.
 | Overview | Fleet-wide counts, project progress, recent privileged actions |
 | Projects | Create a project (books materialised from the versification scheme); per-project progress |
 | Project detail | Add members and change roles; per-book progress; export the whole project as a zip of USFM files |
-| Book detail | Assign a chapter's translator and reviewer; reopen an approved chapter |
+| Book detail | Assign a chapter's translator and reviewer; reopen an approved chapter; export the book as USFM |
 | Accounts | Create pre-confirmed accounts; reset a password and re-arm the forced change |
 | Audit log | Every privileged operation, with operator and before/after values, filterable |
-| Book detail | Export the book as USFM |
 
 Not included: USFM **import**. DB R-USFM-2 requires the round-trip question settled first — a
 source file's markers cannot be stored, so importing one would discard them silently. Export is
@@ -106,6 +105,22 @@ database repository — then add the address to `CONSOLE_OPERATORS` and restart.
 The console verifies the password against GoTrue once at sign-in and then issues its own signed,
 httpOnly session cookie. It never reads project data with an operator's JWT: a coordinator is not
 a member of the projects they administer, and RLS would correctly show them nothing.
+
+**If an operator cannot sign in**, they are locked out of the tool that resets passwords — the
+console's reset is for other people and requires being signed in. That bootstrap gap is what this
+is for:
+
+```bash
+npm run reset-operator
+```
+
+It prompts twice without echoing, refuses a password given as an argument (shell history), and
+writes an audit row. Add `-- --dry-run` to rehearse it without changing anything.
+
+It **will not reset a translator**: only addresses in `CONSOLE_OPERATORS` are accepted. A
+translator's reset belongs in the console, which also re-arms their forced password change — a
+script that skipped that would leave them signed in on a password a coordinator knows, with no
+change pending.
 
 ## Security shape
 
