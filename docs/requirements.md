@@ -30,7 +30,7 @@ the console refuses that the database would accept — this document decides.
   trail (§5).
 - Console-level policy: the rules enforced here and nowhere else (§7).
 - Handling of the service key, and the security properties that follow from it (§9).
-- Configuration, preflight, deployment shape, and testing (§11, §12).
+- Configuration, preflight, deployment shape, operator recovery, and testing (§11, §12).
 
 ### 1.2 This document does not specify
 
@@ -110,7 +110,7 @@ anyone asks.
 ### 3.2 Consequence to accept
 
 The console must run somewhere that executes server code and can reach Postgres, not merely a
-CDN. §11.3 covers the deployment shapes that satisfy this.
+CDN. §11.4 covers the deployment shapes that satisfy this.
 
 ---
 
@@ -493,7 +493,7 @@ patience and by the cost of the underlying operation, not by DB §15's device-fa
 | Any list or detail page | < 1 s to first render |
 | Assignment, membership, reopen, password reset | < 2 s round trip |
 | Create project — one gospel | < 5 s |
-| Create project — whole Bible | May exceed 60 s; must not be cancelled by the host (§11.3) |
+| Create project — whole Bible | May exceed 60 s; must not be cancelled by the host (§11.4) |
 
 - **R-NFR-WEB-1.** Project creation is the only operation whose duration is bounded by data
   volume rather than by round trips, and it is the one that decides where the console can be
@@ -524,7 +524,28 @@ patience and by the cost of the underlying operation, not by DB §15's device-fa
 - **R-OPS-WEB-5.** A database whose migrations predate the console API must be reported as such,
   naming the migration. The alternative is a coordinator discovering it at the point of use.
 
-### 11.3 Deployment
+### 11.3 Operator recovery
+
+- **R-OPS-WEB-13. An operator who cannot sign in must have a way back that does not require
+  signing in.** The console's password reset is for other people and is behind the session
+  gate, so an operator locked out is locked out of the tool that fixes it. This is the only
+  console operation that deliberately lives outside the console.
+- **R-OPS-WEB-14.** That path resets **operators only**. Addresses absent from
+  `CONSOLE_OPERATORS` are refused, because a translator's reset must also re-arm the forced
+  change and re-fingerprint the hash (DB R-AUTH-DB-7) — a second implementation that skipped
+  either would leave a translator signed in on a password a coordinator knows, with no change
+  pending, which is what the flag exists to prevent.
+- **R-OPS-WEB-15.** The password is prompted for without echo and never accepted as an
+  argument, which would place it in shell history and the process list where it outlives the
+  reset. It is entered twice: a typo here locks the operator out harder, and this is the tool
+  they would have used to recover.
+- **R-OPS-WEB-16.** The reset is written to `app.audit_log` with a label naming its origin, so
+  an audit reader can distinguish the console, `provision.sh`, and this script without
+  consulting a second system (DB R-AUTH-DB-12).
+- **R-OPS-WEB-17.** Operators are **not** re-armed. `must_change_password` does not gate console
+  access, because the console never reads project data with an operator's JWT.
+
+### 11.4 Deployment
 
 - **R-OPS-WEB-6.** The console requires a host that executes server code and can reach Postgres.
   Static hosting is excluded by §3.1.
@@ -657,7 +678,7 @@ correctly by a tired person.
 | # | Item | Type |
 |---|---|---|
 | 1 | **`service_role` lacks `USAGE` on schema `api`** (§4.2). The console works around it, but it means the grants in DB migrations 0012 and 0015 are inert as written, and `api.anonymise_profile` is unreachable by any HTTP caller. Should `scripture-bridge-db` fix the grant, or drop the pretence that these are HTTP-callable? | Dependency |
-| 2 | **Deployment target is unchosen**, and it decides three things: pool size, whether project creation can complete in one request, and whether the rate limiter is honest (§11.3). | Decision |
+| 2 | **Deployment target is unchosen**, and it decides three things: pool size, whether project creation can complete in one request, and whether the rate limiter is honest (§11.4). | Decision |
 | 3 | If the console is ever run behind more than one replica, the sign-in limiter needs shared storage (R-SEC-WEB-11). | Decision, follows #2 |
 | 4 | Does a read-only operator role have a real user? A partner organisation wanting progress visibility without provisioning rights is the plausible case, and nobody has asked for it yet. | Decision |
 | 5 | ~~The end-to-end run of R-TEST-WEB-5 has never executed.~~ **Closed 2026-08-20:** green in CI against a full stack, 39 assertions. The workflow needed one fix first, as expected. One criterion of roadmap M4 remains and is not automatable — confirming an assignment reaches a device through delta sync (#11). | Closed |
