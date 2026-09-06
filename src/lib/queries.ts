@@ -392,3 +392,37 @@ export function bookForExport(bookId: string): Promise<ExportRow[]> {
     [bookId],
   );
 }
+
+/**
+ * Every verse of every book in a project, for a whole-project export.
+ *
+ * One query rather than one per book. A whole-Bible project is ~31,000 rows;
+ * sixty-six round trips to assemble the same data would be slower and would
+ * make a partially-exported archive possible if one of them failed midway.
+ *
+ * Ordered by canonical book order, then chapter, then verse — which is the
+ * archive's order, so the caller never has to re-sort.
+ */
+export function projectForExport(projectId: string): Promise<(ExportRow & { book_id: string })[]> {
+  return query<ExportRow & { book_id: string }>(
+    `select b.id           as book_id,
+            p.name         as project_name,
+            p.language_code,
+            b.code          as book_code,
+            b.name          as book_name,
+            bc.name_en      as canon_name,
+            bc.sort_order,
+            bc.testament,
+            c.number        as chapter_number,
+            v.number        as verse_number,
+            v.text
+       from app.book b
+       join app.project p on p.id = b.project_id
+       join ref.book_canon bc on bc.code = b.code
+       join app.chapter c on c.book_id = b.id
+       join app.verse v on v.chapter_id = c.id
+      where b.project_id = $1
+      order by bc.sort_order, c.number, v.number`,
+    [projectId],
+  );
+}

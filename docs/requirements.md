@@ -378,6 +378,22 @@ Each operation below is required for the pilot gate unless marked otherwise.
 - **R-FN-WEB-32.** Filenames follow Paratext's `<NN><CODE><ABBREV>.usfm`, where `NN` reserves 40:
   `ref.book_canon` numbers the New Testament 40–66 and Paratext numbers it 41–67. Off by one and
   the publishing tool sorts Matthew before Malachi.
+- **R-FN-WEB-35. A project exports as one archive of per-book USFM files.** USFM is one file per
+  book by convention, so a project export is inherently a container. Sixty-six separate downloads
+  is a handoff a coordinator will eventually assemble incompletely, and nobody would notice which
+  book was missing until the publisher did.
+- **R-FN-WEB-36.** Books are ordered canonically inside the archive, not by filename. A publisher
+  listing it should see Genesis before Matthew rather than `01GEN` before `41MAT` sorted as
+  strings.
+- **R-FN-WEB-37.** Warnings are aggregated across books rather than repeated per book. A
+  whole-Bible export would otherwise carry sixty-six copies of the structurally-plain caveat,
+  which is how a warning stops being read.
+- **R-FN-WEB-38.** The archive filename carries the date. A coordinator exports for a publisher
+  more than once and needs to tell two downloads apart in the same folder.
+- **R-FN-WEB-39. The archive is verified by an extractor this repository did not write.** The
+  unit tests round-trip it through `node:zlib`, which shares an author with the writer; a format
+  defect both sides agreed on would pass them and still be rejected by the publisher's tooling —
+  the one place nobody here would see it.
 - **R-FN-WEB-33.** Export is recorded in the audit log. It is read-only and takes no lock, but it
   is the one operation that removes translation text from the system, and "who took a copy, and
   when" is asked after the fact or not at all.
@@ -627,7 +643,7 @@ correctly by a tired person.
 7. Password reset with re-arm (§6.6).
 8. Project, book, and chapter read surfaces with progress (§6.7).
 9. Audit log display (§6.8).
-10. USFM export (§6.9).
+10. USFM export, per book and per project (§6.9).
 11. Preflight (§11.2).
 
 ### 14.2 Out of scope, deliberately

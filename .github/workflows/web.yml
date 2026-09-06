@@ -45,6 +45,13 @@ jobs:
       - name: Unit tests
         run: bash scripts/ci-run.sh "unit tests" npm test
 
+      # Hands a generated archive to the runner's own `unzip`. The unit tests
+      # round-trip it through node:zlib, which shares an author with the writer;
+      # a format bug both sides agreed on would pass those and still be rejected
+      # by whatever the publisher opens the file with.
+      - name: Archive opens in an external extractor
+        run: bash scripts/ci-run.sh "zip verification" npm run verify-zip
+
       # WEB R-TEST-WEB-3. Runs before the build because it is fast and because a
       # schema divergence explains a build that would otherwise fail confusingly.
       - name: Schema guard
