@@ -44,9 +44,11 @@ this console is the only thing between a translator and permanent lockout.
 | Book detail | Assign a chapter's translator and reviewer; reopen an approved chapter |
 | Accounts | Create pre-confirmed accounts; reset a password and re-arm the forced change |
 | Audit log | Every privileged operation, with operator and before/after values, filterable |
+| Book detail | Export the book as USFM |
 
-Not included: USFM import and export. No RPC exists for it in the database repository yet, so
-building it here would mean inventing that contract in the wrong repo.
+Not included: USFM **import**. DB R-USFM-2 requires the round-trip question settled first — a
+source file's markers cannot be stored, so importing one would discard them silently. Export is
+built and was never blocked by that decision (DB R-USFM-3).
 
 ## Running it
 
@@ -82,6 +84,19 @@ self-registration is disabled. It writes nothing and never prints the service ke
 npm run dev
 ```
 
+### Pointing at a hosted Supabase project
+
+Two things differ from the local stack, and both are TLS:
+
+- **Set `DATABASE_CA_CERT`.** A hosted project's certificate chain is not in Node's default CA
+  store, so a verified connection fails with *self-signed certificate in certificate chain*.
+  Download the certificate from Settings → Database → SSL Configuration and point this at it.
+- **Do not append `?sslmode=require`.** This driver verifies the chain on `require`, unlike
+  libpq where it means encrypt-without-verifying, so it fails identically. `?sslmode=no-verify`
+  works and is the deliberate opt-out — encrypted, but unauthenticated.
+
+Use the pooler connection string rather than the direct one, which is IPv6-only.
+
 ### Operator accounts
 
 An operator is an ordinary auth user whose email also appears in `CONSOLE_OPERATORS`. Create one
@@ -109,7 +124,8 @@ a member of the projects they administer, and RLS would correctly show them noth
 
 | Command | Checks |
 |---|---|
-| `npm run check` | Typecheck, build, client bundle, schema guard — everything that needs no database |
+| `npm run check` | Typecheck, unit tests, build, client bundle, schema guard — everything that needs no database |
+| `npm test` | Unit tests for the USFM generator and the Postgres TLS decision |
 | `npm run check-stack` | Preflight against a live stack: version, schemas, functions, seeded data, admin API, auth settings |
 | `npm run verify-e2e` | The full M4 sequence — provision, assign, reopen, reset — asserting audit and change-log outcomes |
 
@@ -128,8 +144,9 @@ All of it runs on push — see [.github/workflows/web.yml](.github/workflows/web
 job starts a full Supabase stack, since Docker and the Supabase CLI live in CI rather than on a
 developer's machine.
 
-The e2e job is green: 39 assertions covering provisioning, project materialisation, membership,
-assignment, reopen, password reset, the audit trail, and the console's own HTTP surface. The
+The e2e job is green: 54 assertions covering provisioning, project materialisation, membership,
+assignment, reopen, password reset, USFM export, the audit trail, and the console's own HTTP
+surface. The
 load-bearing one is that assignment writes a change-log entry — the defect DB migration 0015 was
 written to fix, confirmed here by its first caller outside pgTAP.
 

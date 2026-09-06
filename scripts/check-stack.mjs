@@ -16,6 +16,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { Client } from 'pg';
+import { sslConfig, explainTlsFailure } from '../src/lib/pg-ssl.ts';
 
 const OK = '  [32mok[0m   ';
 const BAD = '  [31mFAIL[0m ';
@@ -96,10 +97,7 @@ console.log('\nDatabase');
 
 const client = new Client({
   connectionString: process.env.DATABASE_URL,
-  ssl: /[?&]sslmode=/.test(process.env.DATABASE_URL) ||
-       /@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL)
-    ? undefined
-    : { rejectUnauthorized: true },
+  ssl: sslConfig(process.env.DATABASE_URL),
   connectionTimeoutMillis: 10_000,
   statement_timeout: 15_000,
 });
@@ -108,7 +106,12 @@ try {
   await client.connect();
   pass('connected');
 } catch (err) {
-  fail(`cannot connect: ${err.message}`, 'Is the Supabase stack running, and is DATABASE_URL right?');
+  const tls = explainTlsFailure(err.message);
+  fail(
+    `cannot connect: ${err.message}`,
+    tls ?? 'Is the Supabase stack running, and is DATABASE_URL right?',
+  );
+  if (tls) console.log('');
   console.log('\nStopping: the database is unreachable.\n');
   process.exit(1);
 }

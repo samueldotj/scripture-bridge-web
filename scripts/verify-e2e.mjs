@@ -27,6 +27,7 @@
 import { Client } from 'pg';
 import { randomBytes, createHmac } from 'node:crypto';
 import { buildUsfm, summariseUsfm } from '../src/lib/usfm.ts';
+import { sslConfig, explainTlsFailure } from '../src/lib/pg-ssl.ts';
 
 const OK = '  [32mok[0m   ';
 const BAD = '  [31mFAIL[0m ';
@@ -103,9 +104,7 @@ console.log(`\n${DIM}run ${RUN} · ${API_URL}${RESET}`);
 
 const db = new Client({
   connectionString: DB_URL,
-  ssl: /[?&]sslmode=/.test(DB_URL) || /@(localhost|127\.0\.0\.1)[:/]/.test(DB_URL)
-    ? undefined
-    : { rejectUnauthorized: true },
+  ssl: sslConfig(DB_URL),
   connectionTimeoutMillis: 10_000,
   statement_timeout: 120_000,
 });

@@ -2,6 +2,7 @@ import 'server-only';
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 import { config } from './env';
 import { toConsoleError } from './errors';
+import { sslConfig, explainTlsFailure } from './pg-ssl';
 
 /**
  * The console's connection to Postgres.
@@ -41,22 +42,12 @@ declare global {
 function createPool(): Pool {
   const { databaseUrl } = config();
 
-  // A hosted Supabase URL carries `sslmode=require`, which the driver honours.
-  // A URL with no sslmode pointing anywhere but loopback is almost certainly a
-  // mistake, so it gets TLS rather than a silent plaintext connection.
-  const host = (() => {
-    try {
-      return new URL(databaseUrl).hostname;
-    } catch {
-      return '';
-    }
-  })();
-  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  const declaresSsl = /[?&]sslmode=/.test(databaseUrl);
-
   return new Pool({
     connectionString: databaseUrl,
-    ssl: declaresSsl || isLoopback ? undefined : { rejectUnauthorized: true },
+    // Shared with the preflight and the verification sequence (lib/pg-ssl).
+    // Three programs connect to this database, and a TLS decision made three
+    // times is one that will differ in whichever of them nobody runs.
+    ssl: sslConfig(databaseUrl),
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
@@ -74,6 +65,8 @@ function pool(): Pool {
     globalThis.__sbConsolePool = createPool();
     globalThis.__sbConsolePool.on('error', (err) => {
       console.error('[console] idle client error', err.message);
+      const tls = explainTlsFailure(err.message);
+      if (tls) console.error(tls);
     });
   }
   return globalThis.__sbConsolePool;

@@ -14,8 +14,8 @@
     "check-bundle": "node scripts/check-bundle.mjs",
     "check-schema": "node scripts/check-schema.mjs",
     "verify-e2e": "node scripts/verify-e2e.mjs",
-    "check": "npm run typecheck && npm run test-usfm && npm run build && npm run check-bundle && npm run check-schema",
-    "test-usfm": "node --test scripts/test-usfm.mjs"
+    "check": "npm run typecheck && npm test && npm run build && npm run check-bundle && npm run check-schema",
+    "test": "node --test scripts/test-usfm.mjs scripts/test-pg-ssl.mjs"
   },
   "dependencies": {
     "next": "^15.1.0",
