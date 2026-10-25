@@ -5,7 +5,7 @@
 `scripture-bridge-android-app/docs/roadmap.md` — same milestone numbering, third track
 **Requirements:** [requirements.md](requirements.md) (**WEB**), and the database and app
 requirements documents (**DB**, **APP**)
-**Last updated:** 2026-08-20
+**Last updated:** 2026-10-24
 
 ---
 
@@ -66,9 +66,12 @@ The three things that can stall this path, in order of likelihood:
    runs in CI against a full stack and passes: 39 assertions covering provisioning, project
    materialisation, membership, assignment, reopen, password reset, and the audit trail. What is
    left of it is the delta-sync confirmation, which needs a device and a person (§4.2).
-2. **The deployment target is unchosen** (§4.1 #2), and it decides three implementation details
+2. ~~**The deployment target is unchosen** (§4.1 #2), and it decides three implementation details
    that are cheap now and awkward later: connection pool size, whether whole-Bible project
-   creation survives a host's request ceiling, and whether the sign-in rate limiter is honest.
+   creation survives a host's request ceiling, and whether the sign-in rate limiter is honest.~~
+   **Closed 2026-10-24.** Vercel, with all three details recorded under WEB R-OPS-WEB-18 and
+   R-SEC-WEB-11. What remains of it is timing whole-Bible project creation against the hosted
+   project (WEB §15 #8), which can only be done on the deployed instance.
 3. **USFM import has no contract** (DB §17 #4), and is the only console feature that cannot be
    started until another repository decides something. Export is built and does not need it;
    the pilot gate's vertical slice ends in export, not import, so this does not block the pilot.
@@ -86,7 +89,7 @@ the console's.
 | # | Item | Source | Why it cannot wait |
 |---|---|---|---|
 | 1 | **Who owns this repository, and who holds the console's copy of the service key?** | DB §17 #7, roadmap §8 | The key must rotate with DB R-OPS-4. A rotation that misses the console takes account creation and password reset offline — the two operations whose absence is least tolerable |
-| 2 | **Deployment target**: long-lived instance or serverless | WEB §15 #2 | Decides pool size, request ceiling, and rate-limiter honesty (WEB R-OPS-WEB-7/8, R-SEC-WEB-11) |
+| 2 | ~~**Deployment target**: long-lived instance or serverless~~ **Vercel — decided 2026-10-24** | WEB §15 #2, R-OPS-WEB-18 | ~~Decides pool size, request ceiling, and rate-limiter honesty (WEB R-OPS-WEB-7/8, R-SEC-WEB-11)~~ Decided: pool of two per instance, 300-second route ceiling, per-instance limiter accepted for the pilot |
 | 3 | **Who the console's operators are**, as a list of addresses | WEB R-AUTH-WEB-1 | The allowlist is configuration; without real names it cannot be deployed to anywhere real |
 | 4 | Does `scripture-bridge-db` fix the `service_role` grant, or drop the pretence that its console functions are HTTP-callable? | WEB §15 #1 | Not blocking — the console works around it — but it leaves `api.anonymise_profile` unreachable by any caller, which is a live bug in that repository |
 
@@ -275,7 +278,7 @@ In roughly the order the requirements justify, not a commitment:
 | ~~The first cut has never run against a database~~ | — | — | **Retired 2026-08-20**: the verification passes in CI and now runs on every change, so a regression surfaces on the pull request rather than in front of a coordinator |
 | Service key leaks from the console | Full compromise of every project's data | Any | `server-only` guards, no `NEXT_PUBLIC_*`, and a bundle check that fails the build — negative-tested against each shape it looks for |
 | Key rotation misses the console | Account creation and password reset silently stop working | Any, after a rotation | §4.1 #1; the console named in DB R-OPS-4's runbook |
-| Deployment target chosen late | Rework of pool size and project-creation flow after the fact | M4/M5 boundary | §4.1 #2, forced to a decision before deployment |
+| ~~Deployment target chosen late~~ | — | — | **Retired 2026-10-24**: Vercel, with pool size, request ceiling, and limiter scope recorded under WEB R-OPS-WEB-18 and R-SEC-WEB-11 before the first deploy rather than after |
 | Whole-Bible project creation exceeds a request ceiling | A project half-materialised, or an operator who cannot tell | M5, first large project | Timed against a hosted project before the pilot (WEB §15 #8); serverless constraints in R-OPS-WEB-8 |
 | Schema drift in `scripture-bridge-db` | A renamed column becomes a runtime error found by an operator | Any migration | The schema guard, in CI. **One-directional**: that repository does not know this one exists, so drift stays green there and surfaces here only on the next push (WEB §15 #10) |
 | Coordinator cannot use it without a developer | The pilot gate is not met, and it is not met *late* | Pilot | §5's literal test, run early enough that wording defects can still be fixed |
@@ -285,11 +288,12 @@ In roughly the order the requirements justify, not a commitment:
 
 ## 9. Unowned and Open
 
-**This repository has no owner, no CI, and no deployment.** The DB roadmap §8 said the console
-was the highest-value thing that could happen during M0, and what has happened since is that
-code now exists. That closes the largest part of the gap and does not close the ownership
-question — the code needs somebody to verify it, deploy it, hold its key, and answer for it
-during a pilot.
+**This repository has no owner.** It has had CI since 2026-08-20 and a deployment target —
+Vercel — since 2026-10-24, and neither closes the ownership question. The DB roadmap §8 said the
+console was the highest-value thing that could happen during M0, and what has happened since is
+that code now exists, is verified, and has somewhere to run. That closes the largest part of the
+gap and leaves the part only a person can close: somebody to hold its key, read its red builds,
+and answer for it during a pilot.
 
 The three things that need a name against them:
 

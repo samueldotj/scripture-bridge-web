@@ -59,11 +59,33 @@ function sessionSecret(): string {
   return secret;
 }
 
+/**
+ * Connection pool ceiling, per process.
+ *
+ * A long-lived instance (WEB R-OPS-WEB-7) can hold a real pool. On a serverless
+ * host every warm function instance holds its own, and five each is how a
+ * handful of concurrent coordinators exhausts the pooler's client limit
+ * (R-OPS-WEB-8). Vercel sets VERCEL=1 in every build and function, so the
+ * default follows the host; DATABASE_POOL_MAX overrides either.
+ */
+function poolMax(): number {
+  const fallback = process.env.VERCEL ? '2' : '5';
+  const n = Number(optional('DATABASE_POOL_MAX', fallback));
+  if (!Number.isInteger(n) || n < 1 || n > 50) {
+    throw new ConfigError(
+      'DATABASE_POOL_MAX must be a whole number between 1 and 50.',
+    );
+  }
+  return n;
+}
+
 let cached: Config | null = null;
 
 export interface Config {
   /** Postgres connection string. The console's read and RPC path. */
   databaseUrl: string;
+  /** Pool ceiling per process: 2 on Vercel, 5 elsewhere, or DATABASE_POOL_MAX. */
+  poolMax: number;
   /** Supabase API origin, e.g. https://abcd.supabase.co or http://127.0.0.1:54321. */
   supabaseUrl: string;
   /** Service key. Used ONLY for the GoTrue admin API. Never leaves this process. */
@@ -79,6 +101,7 @@ export function config(): Config {
   if (cached) return cached;
   cached = {
     databaseUrl: required('DATABASE_URL'),
+    poolMax: poolMax(),
     supabaseUrl: required('SUPABASE_URL').replace(/\/+$/, ''),
     serviceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
     anonKey: required('SUPABASE_ANON_KEY'),

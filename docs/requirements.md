@@ -1,10 +1,11 @@
 # Scripture Bridge — Web Console Requirements
 
-**Status:** Draft — §6 verified against a live stack in CI as of 2026-08-20
+**Status:** Draft — §6 verified against a live stack in CI as of 2026-08-20; deployment target
+decided 2026-10-24 (§11.4)
 **Scope:** The administrative console for the Scripture Bridge backend
 **Companion documents:** `scripture-bridge-db/docs/requirements.md` (**DB**) and
 `scripture-bridge-android-app/docs/requirements.md` (**APP**)
-**Last updated:** 2026-08-20
+**Last updated:** 2026-10-24
 
 ---
 
@@ -496,6 +497,11 @@ driver error.
   and is honest only for a single-instance deployment; behind more than one replica the
   effective ceiling multiplies. A multi-replica deployment requires shared storage for it, and
   that must be a decision rather than a discovery (§15 #3).
+  **Decided 2026-10-24:** on Vercel (R-OPS-WEB-18) each warm function instance holds its own
+  window, so the ceiling is eight attempts per instance rather than per deployment. Accepted
+  for the pilot: GoTrue's own limits stand behind this one, the console has a handful of
+  operators, and shared storage would add a dependency to the sign-in path for a control that
+  is the second line rather than the first. Revisit if the operator count or the host changes.
 
 ---
 
@@ -572,6 +578,29 @@ patience and by the cost of the underlying operation, not by DB §15's device-fa
   connection string must be the pooler; the pool size must be reduced, since each instance holds
   its own; and the host's maximum request duration must accommodate project creation or projects
   must be created a few books at a time (R-NFR-WEB-1).
+- **R-OPS-WEB-18. Decided 2026-10-24: the console deploys to Vercel**, a serverless host, so the
+  three items of R-OPS-WEB-8 are recorded here rather than left to be discovered:
+  - *Connection string.* The Supabase **session-mode** pooler (port 5432). Vercel functions
+    reach Postgres over IPv4 only, which rules out the direct host; transaction mode (port 6543)
+    is ruled out because the pool sets `statement_timeout` as a startup parameter, which that
+    mode does not honour.
+  - *Pool size.* Two connections per instance, the default whenever `VERCEL` is present in the
+    environment, overridable with `DATABASE_POOL_MAX`. A long-lived instance keeps five. The
+    decision lives in `lib/env.ts` so the three programs that connect share it (R-OPS-WEB-11).
+  - *Request duration.* The `(console)` layout and both export route handlers export
+    `maxDuration = 300`, the ceiling every Vercel plan allows, so the pool's 120-second statement
+    timeout remains the binding limit on project creation rather than the host's default.
+    Whole-Bible creation is still to be timed against the hosted project (§15 #8); if it
+    approaches the statement timeout, projects are created a few books at a time
+    (R-NFR-WEB-1).
+  - *Certificate.* `DATABASE_CA_CERT` is supplied as the inline PEM, not a file path. The
+    function bundle is not guaranteed to contain a file the code only opens at runtime.
+  - *Secrets.* Production-scoped only, marked sensitive; preview deployments receive none of
+    them, since there is no staging database for a preview to point at.
+
+  The preference of R-OPS-WEB-7 stands as written: a long-lived instance remains the better
+  shape, and nothing above prevents moving to one. Vercel was chosen because it exists now, and
+  the pilot gate (roadmap §5) cannot be attempted against a console that is not deployed.
 - **R-OPS-WEB-10. The database connection verifies TLS, and the CA is supplied rather than the
   check disabled.** A hosted Supabase project presents a chain absent from Node's default store,
   so strict verification fails; the remedy is `DATABASE_CA_CERT`, not `rejectUnauthorized:
@@ -694,14 +723,14 @@ correctly by a tired person.
 | # | Item | Type |
 |---|---|---|
 | 1 | **`service_role` lacks `USAGE` on schema `api`** (§4.2). The console works around it, but it means the grants in DB migrations 0012 and 0015 are inert as written, and `api.anonymise_profile` is unreachable by any HTTP caller. Should `scripture-bridge-db` fix the grant, or drop the pretence that these are HTTP-callable? | Dependency |
-| 2 | **Deployment target is unchosen**, and it decides three things: pool size, whether project creation can complete in one request, and whether the rate limiter is honest (§11.4). | Decision |
-| 3 | If the console is ever run behind more than one replica, the sign-in limiter needs shared storage (R-SEC-WEB-11). | Decision, follows #2 |
+| 2 | ~~**Deployment target is unchosen**, and it decides three things: pool size, whether project creation can complete in one request, and whether the rate limiter is honest (§11.4).~~ **Closed 2026-10-24:** Vercel. Pool size, request ceiling, connection string, and certificate handling recorded under R-OPS-WEB-18. | Closed |
+| 3 | ~~If the console is ever run behind more than one replica, the sign-in limiter needs shared storage (R-SEC-WEB-11).~~ **Closed 2026-10-24:** per-instance limiting accepted for the pilot, with the reasoning recorded under R-SEC-WEB-11. Reopens if the operator count or the host changes. | Closed |
 | 4 | Does a read-only operator role have a real user? A partner organisation wanting progress visibility without provisioning rights is the plausible case, and nobody has asked for it yet. | Decision |
 | 5 | ~~The end-to-end run of R-TEST-WEB-5 has never executed.~~ **Closed 2026-08-20:** green in CI against a full stack, 39 assertions. The workflow needed one fix first, as expected. One criterion of roadmap M4 remains and is not automatable — confirming an assignment reaches a device through delta sync (#11). | Closed |
 | 11 | **A chapter assigned through the console has never been shown to reach a device.** The verification proves the change-log entry exists; delta sync delivering it to a signed-in app client is untested from this side and needs the app team. | Verification |
 | 6 | Session lifetime is asserted at 8 hours from the shape of a coordinator's day, not measured. Revisit if operators report being signed out mid-task. | Verification |
 | 7 | Who holds the console's copy of the service key, and how is its rotation coordinated with DB R-OPS-4? Roadmap §8's ownership question, narrowed to the one operational consequence. | Dependency |
-| 8 | Project creation for a whole Bible has never been timed against a hosted project, only reasoned about from the row count. It is the console's only volume-bound operation and the one that constrains deployment. | Verification |
+| 8 | Project creation for a whole Bible has never been timed against a hosted project, only reasoned about from the row count. It is the console's only volume-bound operation and the one that constrains deployment. **Now the first thing to do on the deployed instance**: the two ceilings it measures against are the 300-second route limit and the 120-second statement timeout (R-OPS-WEB-18). | Verification |
 | 9 | ~~There is no CI.~~ **Closed:** typecheck, schema guard, build, bundle check, and the M4 verification all run on push. Two consequences remain open — the schema guard only runs when *this* repository is pushed, so a migration landing in `scripture-bridge-db` breaks nothing until someone touches this one (#10), and the workflow has never executed (#5). | Closed |
 | 10 | The cross-repository guard is one-directional. `scripture-bridge-db` does not know this console exists, so a migration that renames a column goes green there and red here only on the next push. A scheduled run, or a notification from that repository, would close the window — neither is built. | Decision |
 

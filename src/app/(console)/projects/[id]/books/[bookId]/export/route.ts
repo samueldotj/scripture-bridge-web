@@ -6,6 +6,13 @@ import { buildUsfm, type ExportChapter } from '@/lib/usfm';
 import { toConsoleError } from '@/lib/errors';
 
 /**
+ * Route handlers do not inherit the `(console)` layout's segment config, so the
+ * request ceiling is repeated here (WEB R-OPS-WEB-18). One book is seconds, but the
+ * ceiling is a property of the deployment, not of the route.
+ */
+export const maxDuration = 300;
+
+/**
  * USFM export for one book (DB §14, WEB §6.9).
  *
  * A route handler rather than a Server Action because the result is a file the

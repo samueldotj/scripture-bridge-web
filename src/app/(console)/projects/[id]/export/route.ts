@@ -7,6 +7,13 @@ import { createZip } from '@/lib/zip';
 import { toConsoleError } from '@/lib/errors';
 
 /**
+ * Route handlers do not inherit the `(console)` layout's segment config, so the
+ * request ceiling is repeated here (WEB R-OPS-WEB-18). A whole-project export reads
+ * every verse of every book before the first byte is sent.
+ */
+export const maxDuration = 300;
+
+/**
  * Whole-project USFM export, as one zip of per-book files (WEB §6.9).
  *
  * The per-book route exists too, and is the right thing for checking one book.

@@ -40,7 +40,7 @@ declare global {
 }
 
 function createPool(): Pool {
-  const { databaseUrl } = config();
+  const { databaseUrl, poolMax } = config();
 
   return new Pool({
     connectionString: databaseUrl,
@@ -48,7 +48,9 @@ function createPool(): Pool {
     // Three programs connect to this database, and a TLS decision made three
     // times is one that will differ in whichever of them nobody runs.
     ssl: sslConfig(databaseUrl),
-    max: 5,
+    // Per process. 5 on a long-lived instance; 2 on Vercel, where every warm
+    // function instance holds its own pool (lib/env, WEB R-OPS-WEB-18).
+    max: poolMax,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     // Long enough for `create_project`, which materialises every verse of every

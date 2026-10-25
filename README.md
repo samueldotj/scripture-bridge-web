@@ -96,6 +96,28 @@ Two things differ from the local stack, and both are TLS:
 
 Use the pooler connection string rather than the direct one, which is IPv6-only.
 
+### Deploying to Vercel
+
+The console runs on Vercel as of 2026-10-24 — the serverless shape, so the three things
+[docs/requirements.md](docs/requirements.md) R-OPS-WEB-8 asks for are settled in code and
+recorded under R-OPS-WEB-18. What to do in the dashboard:
+
+1. Import the repository with the Next.js preset; the root directory and build command stay as
+   detected. The build needs no real credentials.
+2. Set every variable from `.env.example` for the **Production** environment only, and mark the
+   two Supabase keys and `CONSOLE_SESSION_SECRET` as sensitive. Do not expose them to preview
+   deployments — there is no staging database for a preview to point at, and a preview holding
+   the production service key is a second place for it to leak.
+3. `DATABASE_URL` is the **session-mode** pooler string (port 5432). Transaction mode does not
+   honour the `statement_timeout` the pool sets at connect time.
+4. `DATABASE_CA_CERT` is the **inline PEM**, pasted from `prod-ca-2021.crt`, not a path.
+5. Leave `DATABASE_POOL_MAX` unset: the pool drops to two connections per instance on its own
+   when it sees Vercel's environment.
+6. After the first deploy, time a whole-Bible project creation against the hosted project. It
+   is the one operation bounded by data volume, and it has only been reasoned about
+   (requirements §15 #8). Every console route allows 300 seconds; the pool's 120-second
+   statement timeout is the limit it will actually hit.
+
 ### Operator accounts
 
 An operator is an ordinary auth user whose email also appears in `CONSOLE_OPERATORS`. Create one
